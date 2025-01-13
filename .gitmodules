@@ -1,0 +1,6 @@
+[submodule "models/mdt_policy"]
+	path = models/mdt_policy
+	url = git@github.com:intuitive-robots/mdt_policy.git
+[submodule "models/Qwen2-VL"]
+	path = models/Qwen2-VL
+	url = git@github.com:QwenLM/Qwen2-VL.git
