@@ -1,6 +1,6 @@
-[submodule "models/mdt_policy"]
-	path = models/mdt_policy
-	url = git@github.com:thomas-roth/mdt_policy.git
+[submodule "models/MoDE_Diffusion_Policy"]
+	path = models/MoDE_Diffusion_Policy
+	url = git@github.com:thomas-roth/MoDE_Diffusion_Policy.git
 [submodule "models/Qwen2-VL"]
 	path = models/Qwen2-VL
 	url = git@github.com:QwenLM/Qwen2-VL.git
