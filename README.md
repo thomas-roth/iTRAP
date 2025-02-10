@@ -21,6 +21,13 @@ This repository contains the code and benchmarks for my Bachelor's thesis titled
 
 
 ### Installation Steps
+```bash
+git clone --recurse-submodules git@github.com:thomas-roth/bt-trajectory-planning.git
+cd bt-trajectory-planning
+conda create -n bt python=3.9
+conda activate bt
+sh install_packages.sh
+```
 
 ---
 
