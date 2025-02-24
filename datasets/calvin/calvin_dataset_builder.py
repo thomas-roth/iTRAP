@@ -35,7 +35,7 @@ class CalvinDatasetBuilder(ABC):
 
         _console_handler = logging.StreamHandler(stream=sys.stdout)
         _console_handler.setLevel(logging.INFO)
-        _console_handler.setFormatter(logging.Formatter("\033[92m[%(asctime)s] [%(levelname)s] %(message)s\033[0m"))
+        _console_handler.setFormatter(logging.Formatter("\033[92m[%(asctime)s][%(levelname)s]\033[0m %(message)s"))
         self._logger.addHandler(_console_handler)
 
 
@@ -87,7 +87,7 @@ class CalvinDatasetBuilder(ABC):
         traj_strings_all_seqs = []
         start_imgs_all_seqs = []
         traj_imgs_all_seqs = []
-        for i, seq in tqdm(enumerate(self.dataloader), total=len(self.dataloader), desc=f"Building dataset for {dataset_split} split"):
+        for i, seq in tqdm(enumerate(self.dataloader), total=len(self.dataloader), desc=f"Building trajectories for {dataset_split} split"):
             assert len(seq["obs"]["robot_obs"]) == len(seq["obs"]["rel_actions"]) == len(seq["obs"]["rgb_static"]) == len(seq["obs"]["rgb_gripper"])
 
             self.curr_seq = seq # not pretty but required for build_trajectory_representation()
@@ -113,7 +113,6 @@ class CalvinDatasetBuilder(ABC):
                 traj_strings_all_seqs.append(traj_representations["traj_string_seq"])
                 start_imgs_all_seqs.append(traj_representations["start_imgs_seq"])
 
-        self._logger.info(f"Built {i+1} trajectories for {dataset_split} split")
-        self._logger.info(f"Average trajectory length: {np.mean(lengths_simplified_trajs)}")
+        self._logger.info(f"Built {i+1} trajectories for {dataset_split} split, average trajectory length: {np.mean(lengths_simplified_trajs)}")
 
         return task_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, traj_imgs_all_seqs

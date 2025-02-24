@@ -5,6 +5,7 @@ import logging
 import json
 from pathlib import Path
 from PIL import Image
+from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).absolute().parents[2]))
 from datasets.calvin.calvin_dataset_builder import CalvinDatasetBuilder
@@ -23,7 +24,7 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
 
         _file_handler = logging.FileHandler(f"{self.output_dir}/{self.timestamp}/build_dataset.log", mode='w')
         _file_handler.setLevel(logging.INFO)
-        _file_handler.setFormatter(logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s"))
+        _file_handler.setFormatter(logging.Formatter("[%(asctime)s][%(levelname)s] %(message)s"))
         self._logger.addHandler(_file_handler)
 
         self._logger.info("Initialized CalvinVLMDatasetBuilder")
@@ -70,14 +71,15 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         os.makedirs(dataset_path, exist_ok=True)
 
         dataset_entries = []
-        for i, (task_seq, traj_string_seq, start_imgs_seq) in enumerate(zip(task_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs)):
+        for i, (task_seq, traj_string_seq, start_imgs_seq) in tqdm(enumerate(zip(task_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs)),
+                                                                   total=len(task_all_seqs), desc=f"Building question-answer pairs for {dataset_split} split"):
             first_static_img = Image.fromarray(start_imgs_seq["rgb_static"])
-            first_static_img_path = f"{dataset_path}/{i:0{num_digits}d}_{task_seq}_static.png"
-            first_static_img.save(first_static_img_path)
+            first_static_img_name = f"{i:0{num_digits}d}_{task_seq}_static.png"
+            first_static_img.save(f"{dataset_path}/{first_static_img_name}")
 
             first_gripper_img = Image.fromarray(start_imgs_seq["rgb_gripper"])
-            first_gripper_img_path = f"{dataset_path}/{i:0{num_digits}d}_{task_seq}_gripper.png"
-            first_gripper_img.save(first_gripper_img_path)
+            first_gripper_img_name = f"{i:0{num_digits}d}_{task_seq}_gripper.png"
+            first_gripper_img.save(f"{dataset_path}/{first_gripper_img_name}")
 
             # FIXME?: use long version of task instruction for prompt (["language"]["ann"] instead of ["language"]["task"])
             dataset_entry = {
@@ -94,8 +96,8 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
                     "role": "assistant"
                 }],
                 "images": [
-                    first_static_img_path,
-                    first_gripper_img_path
+                    first_static_img_name,
+                    first_gripper_img_name
                 ]
             }
             dataset_entries.append(dataset_entry)
@@ -122,6 +124,8 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         with open(f"{dataset_path}/dataset_info.json", "w") as dataset_info_file:
             dataset_info_str = json.dumps(dataset_info, indent=2)[1:-1].strip() # remove outer curly braces
             dataset_info_file.write(dataset_info_str)
+        
+        self._logger.info(f"Built question-answer file for {dataset_split} split")
 
 
     def build_dataset(self):

@@ -8,8 +8,8 @@ import torch
 import numpy as np
 from pathlib import Path
 from PIL import Image
-from omegaconf import OmegaConf
 from tqdm import tqdm
+from omegaconf import OmegaConf
 
 sys.path.append(str(Path(__file__).absolute().parents[2]))
 from datasets.calvin.calvin_dataset_builder import CalvinDatasetBuilder
@@ -37,7 +37,7 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
 
         _file_handler = logging.FileHandler(f"{self.output_dir}/{self.timestamp}/build_dataset.log", mode='w')
         _file_handler.setLevel(logging.INFO)
-        _file_handler.setFormatter(logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s"))
+        _file_handler.setFormatter(logging.Formatter("[%(asctime)s][%(levelname)s] %(message)s"))
         self._logger.addHandler(_file_handler)
 
         self._logger.info("Initialized CalvinPolicyDatasetBuilder")
@@ -131,7 +131,7 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
     def _embed_and_save_trajectory_imgs(self, task_all_seqs, traj_imgs_all_seqs, dataset_split):
         assert len(task_all_seqs) == len(traj_imgs_all_seqs)
 
-        cfg_clip_vis = OmegaConf.load(self.CLIP_VIS_CFG_PATH).vision_goal
+        cfg_clip_vis = OmegaConf.load(Path(__file__).absolute().parents[2] / self.CLIP_VIS_CFG_PATH).vision_goal
         cfg_clip_vis.model_name = "ViT-B/16"
         sys.path.append(str(Path(__file__).absolute().parents[2] / "models" / "MoDE_Diffusion_Policy"))
         clip_vis = hydra.utils.instantiate(cfg_clip_vis)
@@ -139,7 +139,7 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
         # build auto_vis_lang_ann.npy (load auto_lang_ann and add vision annotations)
         auto_lang_ann = np.load(f"{self.dataset_path}/{dataset_split}/{self.AUTO_LANG_ANN_FOLDER}/auto_lang_ann.npy", allow_pickle=True).item()
         auto_vis_lang_ann = {"vision": {"ann": [], "emb": []}, "language": auto_lang_ann["language"], "info": auto_lang_ann["info"]}
-        for traj_imgs_seq in traj_imgs_all_seqs:
+        for traj_imgs_seq in tqdm(traj_imgs_all_seqs, total=len(traj_imgs_all_seqs), desc=f"Embedding trajectory images for {dataset_split} split"):
             first_static_traj_img = traj_imgs_seq["rgb_static"][0] # don't use rgb_gripper imgs as they don't show the traj well
             first_static_traj_img_embedded = clip_vis([Image.fromarray(first_static_traj_img)])
 
@@ -155,7 +155,7 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
         if dataset_split == "validation":
             # build embeddings.npy
             embeddings = {}
-            for i in range(len(task_all_seqs)):
+            for i in tqdm(range(len(task_all_seqs)), total=len(task_all_seqs), desc=f"Embedding vision-language trajectories per task of {dataset_split} split"):
                 embeddings[task_all_seqs[i]] = {"emb": [], "vis_emb": [], "lang_emb": [], "vis_ann": [], "lang_ann": []}
                 embeddings[task_all_seqs[i]]["emb"] = np.concatenate((auto_vis_lang_ann["vision"]["emb"][i], auto_vis_lang_ann["language"]["emb"][i]), axis=-1)[np.newaxis, :]
                 embeddings[task_all_seqs[i]]["vis_emb"] = auto_vis_lang_ann["vision"]["emb"][i][np.newaxis, :]
@@ -165,7 +165,9 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
             
             np.save(f"{vis_lang_ann_output_dir}/embeddings.npy", embeddings)
 
-        self._logger.info(f"Built {len(task_all_seqs)} vision-language annotations for {dataset_split} split")
+            self._logger.info(f"Built vision-language annotation files for {dataset_split} split")
+        else:
+            self._logger.info(f"Built vision-language annotation file for {dataset_split} split")
 
 
     def build_dataset(self):
