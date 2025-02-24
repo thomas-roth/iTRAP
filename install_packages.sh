@@ -30,6 +30,7 @@ pip install seaborn
 pip install optree
 pip install natsort
 pip install moviepy==1.0.3
+pip install rdp
 pip install -r requirements.txt
 
 # Qwen2-VL
