@@ -77,27 +77,24 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
             first_static_img_name = f"{i:0{num_digits}d}_{task_seq}_static.png"
             first_static_img.save(f"{dataset_path}/{first_static_img_name}")
 
-            first_gripper_img = Image.fromarray(start_imgs_seq["rgb_gripper"])
-            first_gripper_img_name = f"{i:0{num_digits}d}_{task_seq}_gripper.png"
-            first_gripper_img.save(f"{dataset_path}/{first_gripper_img_name}")
+            # don't use gripper image as only tiny part of trajectory visible
 
             # FIXME?: use long version of task instruction for prompt (["language"]["ann"] instead of ["language"]["task"])
             dataset_entry = {
                 "messages": [{
-                    "content": f"<image><image>In the images, please execute the command described in <prompt>{str.replace(task_seq, '_', ' ')}</prompt>. " \
+                    "content": f"<image>In the image, please execute the command described in <prompt>{str.replace(task_seq, '_', ' ')}</prompt>. " \
                                 "Provide a sequence of points denoting the trajectory of a robot gripper to achieve the goal. " \
                                 "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(0.252, 0.328), (0.327, 0.174), " \
                                 "(0.139, 0.242), <action>Open Gripper</action>, (0.746, 0.218), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
-                                "an x and y location of the end effector of the gripper in the first image. The action tags indicate the gripper action. " \
-                                "The coordinates should be floats ranging between 0 and 1, indicating the relative locations of the points in the first image.",
+                                "an x and y location of the end effector of the gripper in the image. The action tags indicate the gripper action. " \
+                                "The coordinates should be floats ranging between 0 and 1, indicating the relative location of the points in the image.",
                     "role": "user"
                 },{
                     "content": traj_string_seq,
                     "role": "assistant"
                 }],
                 "images": [
-                    first_static_img_name,
-                    first_gripper_img_name
+                    first_static_img_name
                 ]
             }
             dataset_entries.append(dataset_entry)
@@ -125,7 +122,7 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
             dataset_info_str = json.dumps(dataset_info, indent=2)[1:-1].strip() # remove outer curly braces
             dataset_info_file.write(dataset_info_str)
         
-        self._logger.info(f"Built question-answer file for {dataset_split} split")
+        self._logger.info(f"Built dataset file for {dataset_split} split")
 
 
     def build_dataset(self):
