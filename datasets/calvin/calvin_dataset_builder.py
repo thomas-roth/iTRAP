@@ -8,8 +8,7 @@ from omegaconf import OmegaConf
 from tqdm import tqdm
 from abc import ABC, abstractmethod
 
-sys.path.append(str(Path(__file__).absolute().parents[2]))
-from datasets.calvin.calvin_dataloader import CalvinDataLoader
+from calvin_dataloader import CalvinDataLoader
 
 
 class CalvinDatasetBuilder(ABC):

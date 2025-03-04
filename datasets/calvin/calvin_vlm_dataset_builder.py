@@ -1,14 +1,11 @@
 import datetime
 import os
-import sys
 import logging
 import json
-from pathlib import Path
 from PIL import Image
 from tqdm import tqdm
 
-sys.path.append(str(Path(__file__).absolute().parents[2]))
-from datasets.calvin.calvin_dataset_builder import CalvinDatasetBuilder
+from calvin_dataset_builder import CalvinDatasetBuilder
 
 
 class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
@@ -36,13 +33,14 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         gripper_centers = self._project_gripper_centers_to_cam(gripper_centers_world, cam_id=0)
 
         assert self.env.cameras[0].width == self.env.cameras[0].height
-        assert self.env.cameras[1].width == self.env.cameras[1].height
+        static_img_size = self.env.cameras[0].width
 
         is_gripper_open = gripper_widths[0] == self.CALVIN_GRIPPER_WIDTH_OPEN
         traj_string_contents = []
         for (gripper_center, gripper_width) in zip(gripper_centers, gripper_widths):
-            normalized_gripper_center_x = round(float(gripper_center[0]) / self.env.cameras[0].width, self.traj_string_coords_precision)
-            normalized_gripper_center_y = round(float(gripper_center[1]) / self.env.cameras[1].width, self.traj_string_coords_precision)
+            # upper bound gripper centers for if gripper out of view for static cam
+            normalized_gripper_center_x = min(1, round(float(gripper_center[0]) / static_img_size, self.traj_string_coords_precision))
+            normalized_gripper_center_y = min(1, round(float(gripper_center[1]) / static_img_size, self.traj_string_coords_precision))
 
             traj_string_contents.append(f"({normalized_gripper_center_x}, {normalized_gripper_center_y})")
 

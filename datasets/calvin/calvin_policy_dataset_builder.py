@@ -11,8 +11,7 @@ from PIL import Image
 from tqdm import tqdm
 from omegaconf import OmegaConf
 
-sys.path.append(str(Path(__file__).absolute().parents[2]))
-from datasets.calvin.calvin_dataset_builder import CalvinDatasetBuilder
+from calvin_dataset_builder import CalvinDatasetBuilder
 
 
 class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
