@@ -1,6 +1,6 @@
 [submodule "models/MoDE_Diffusion_Policy"]
 	path = models/MoDE_Diffusion_Policy
 	url = git@github.com:thomas-roth/MoDE_Diffusion_Policy.git
-[submodule "models/Qwen2-VL"]
-	path = models/Qwen2-VL
-	url = git@github.com:QwenLM/Qwen2-VL.git
+[submodule "models/Qwen2-VL/LLaMA-Factory"]
+	path = models/Qwen2-VL/LLaMA-Factory
+	url = https://github.com/hiyouga/LLaMA-Factory.git

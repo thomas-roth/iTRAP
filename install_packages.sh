@@ -32,6 +32,10 @@ pip install natsort
 pip install moviepy==1.0.3
 pip install rdp
 pip install -r requirements.txt
+pip uninstall -y opencv-python # clashes with opencv-python-headless
 
 # Qwen2-VL
 echo "${GREEN}Installing Qwen2-VL (2/2)${NC}"
+cd models/Qwen2-VL/LLaMA-Factory
+pip install -e ".[torch,metrics]"
+cd ../../..
