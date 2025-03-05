@@ -32,8 +32,6 @@ logger = logging.getLogger(__name__)
 
 
 def setup_vlm_server():
-    # command for server: CUDA_VISIBLE_DEVICES=0 llamafactory-cli api /home/troth/bt/bt-trajectory-planning/iTRAP/models/Qwen2-VL/inference_config.yaml
-
     client = OpenAI(api_key="0", base_url="http://localhost:8000/v1")
     return client
 
