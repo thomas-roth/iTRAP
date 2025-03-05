@@ -6,7 +6,7 @@ NC='\033[0m'
 # MoDE
 echo "${GREEN}Installing MoDE (1/2)${NC}"
 echo "${GREEN}Installing calvin (1/4)${NC}"
-cd models/MoDE_Diffusion_Policy/calvin_env/tacto
+cd iTRAP/models/MoDE_Diffusion_Policy/calvin_env/tacto
 pip install -e .
 cd ..
 pip install -e .
@@ -36,6 +36,6 @@ pip uninstall -y opencv-python # clashes with opencv-python-headless
 
 # Qwen2-VL
 echo "${GREEN}Installing Qwen2-VL (2/2)${NC}"
-cd models/Qwen2-VL/LLaMA-Factory
+cd iTRAP/models/Qwen2-VL/LLaMA-Factory
 pip install -e ".[torch,metrics]"
 cd ../../..

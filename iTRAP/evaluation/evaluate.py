@@ -13,12 +13,12 @@ import torch
 from tqdm import tqdm
 from PIL import Image
 
-sys.path.append(str(Path(__file__).absolute().parents[1]))
+sys.path.append(str(Path(__file__).absolute().parents[2]))
 sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "MoDE_Diffusion_Policy"))
-from models.MoDE_Diffusion_Policy.mode.evaluation.utils import get_default_mode_and_env, get_env_state_for_initial_condition
-from models.MoDE_Diffusion_Policy.mode.evaluation.multistep_sequences import get_sequences
-from models.MoDE_Diffusion_Policy.mode.evaluation.mode_evaluate import get_log_dir
-from models.MoDE_Diffusion_Policy.mode.rollout.rollout_video import RolloutVideo
+from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.utils import get_default_mode_and_env, get_env_state_for_initial_condition
+from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.multistep_sequences import get_sequences
+from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.mode_evaluate import get_log_dir
+from iTRAP.models.MoDE_Diffusion_Policy.mode.rollout.rollout_video import RolloutVideo
 
 
 
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 def setup_vlm_server():
-    # command for server: CUDA_VISIBLE_DEVICES=0 llamafactory-cli api /home/troth/bt/bt-trajectory-planning/models/Qwen2-VL/inference_config.yaml
+    # command for server: CUDA_VISIBLE_DEVICES=0 llamafactory-cli api /home/troth/bt/bt-trajectory-planning/iTRAP/models/Qwen2-VL/inference_config.yaml
 
     client = OpenAI(api_key="0", base_url="http://localhost:8000/v1")
     return client

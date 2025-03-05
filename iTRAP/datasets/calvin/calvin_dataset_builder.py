@@ -77,7 +77,7 @@ class CalvinDatasetBuilder(ABC):
         del env_conf.cameras["tactile"] # not relevant for the Policy & VLM datasets and breaks hydra instantiation
         self.env = hydra.utils.instantiate(env_conf.env, use_vr=False, use_scene_info=True)
 
-        calvin_root = Path(__file__).absolute().parents[3] / "calvin_env"
+        calvin_root = Path(__file__).absolute().parents[2] / "models" / "MoDE_Diffusion_Policy" / "calvin_env"
         self.dataloader = CalvinDataLoader(calvin_root, dataset_path=f"{self.dataset_path}/{dataset_split}", annotations_folder=self.AUTO_LANG_ANN_FOLDER)
         
         lengths_simplified_trajs = []
