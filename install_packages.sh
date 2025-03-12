@@ -31,6 +31,7 @@ pip install optree
 pip install natsort
 pip install moviepy==1.0.3
 pip install rdp
+pip install dtw-python
 pip install -r requirements.txt
 pip uninstall -y opencv-python # clashes with opencv-python-headless
 

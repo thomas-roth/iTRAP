@@ -1,9 +1,12 @@
 import base64
+import io
 import logging
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
+from collections import Counter
 import cv2
 import hydra
 from omegaconf import DictConfig
@@ -24,15 +27,13 @@ from iTRAP.models.MoDE_Diffusion_Policy.mode.rollout.rollout_video import Rollou
 
 MODEL_PATH = "path/to/model"
 
-logger = logging.getLogger(__name__)
-
-
 # TODO: debug rollout_video
 
 
 
 def setup_vlm_server():
     client = OpenAI(api_key="0", base_url="http://localhost:8000/v1")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     return client
 
 
@@ -80,7 +81,7 @@ def generate_tasks(num_tasks) -> list:
 
 
 def build_prompt(task_desc: str) -> list:
-    return f"<input_image.png>In the image, please execute the command described in <prompt>{task_desc.replace('_', ' ')}</prompt>. " \
+    return f"<image.png>In the image, please execute the command described in <prompt>{task_desc.replace('_', ' ')}</prompt>. " \
             "Provide a sequence of points denoting the trajectory of a robot gripper to achieve the goal. " \
             "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(0.252, 0.328), (0.327, 0.174), " \
             "(0.139, 0.242), <action>Open Gripper</action>, (0.746, 0.218), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
@@ -88,12 +89,11 @@ def build_prompt(task_desc: str) -> list:
             "The coordinates should be floats ranging between 0 and 1, indicating the relative location of the points in the image."
 
 
-def extract_gripper_points(response: dict):
+def extract_gripper_points(response):
     regex_ans = r"<ans>(.*?)</ans>"
     regex_gripper_points = r"\(([0-9.]+),\s*([0-9.]+)\)"
     regex_gripper_actions = r"<action>(.*?)</action>"
 
-    response = response.choices[0].message.content
     response = re.search(regex_ans, response, re.DOTALL).group(1)
 
     gripper_points = []
@@ -125,7 +125,7 @@ def extract_gripper_points(response: dict):
     return gripper_points, points_before_gripper_actions
 
 
-def draw_trajectory(img, gripper_points, gripper_actions):
+def draw_trajectory(img, gripper_points, gripper_actions, traj_color="red"):
     img_copy = img.copy()
     
     assert img_copy.shape[0] == img_copy.shape[1]
@@ -135,7 +135,13 @@ def draw_trajectory(img, gripper_points, gripper_actions):
     scaled_gripper_actions = [((int(x * img_size), int(y * img_size)), action) for ((x, y), action) in gripper_actions]
 
     for i in range(len(scaled_gripper_points) - 1):
-        color = (round((i+1) / len(scaled_gripper_points) * 255), 0, 0) # black to red over time
+        if traj_color == "red":
+            color = (round((i+1) / len(scaled_gripper_points) * 255), 0, 0) # black to red over time
+        elif traj_color == "green":
+            color = (0, round((i+1) / len(scaled_gripper_points) * 255), 0) # black to green over time
+        else:
+            color = (0, 0, round((i+1) / len(scaled_gripper_points) * 255)) # black to blue over time
+        
         cv2.line(img_copy, scaled_gripper_points[i], scaled_gripper_points[i+1], color, thickness=2)
     
     for point, action in scaled_gripper_actions:
@@ -160,7 +166,7 @@ def rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task
     rollout_video.new_subtask() # TODO: required?
 
     success = False
-    for step in range(policy_cfg.ep_len):
+    for step in tqdm(range(policy_cfg.ep_len), desc=f"Rolling out policy for task {task}", leave=False):
         action = policy.step(obs, goal)
         obs, _, _, current_info = env.step(action)
 
@@ -179,6 +185,14 @@ def rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task
     return success
 
 
+def print_success_rate(total_task_counter, success_counter):
+    max_task_len = max([len(task) for task in total_task_counter])
+
+    for task in total_task_counter:
+        print(f"{task:<{max_task_len}}: {success_counter[task]} / {total_task_counter[task]} | SR: {success_counter[task] / total_task_counter[task] * 100:.2f} %")
+    print(f"Total SR: {sum(success_counter.values()) / sum(total_task_counter.values()) * 100:.2f}%")
+
+
 @hydra.main(config_path="../models/MoDE_Diffusion_Policy/conf", config_name="mode_evaluate")
 def main(policy_cfg: DictConfig) -> None:
     # make sure policy runs on GPUs 1, 2, 3 (GPU 0 used by VLM)
@@ -189,6 +203,7 @@ def main(policy_cfg: DictConfig) -> None:
 
     client = setup_vlm_server()
 
+    logger = logging.getLogger(__name__)
     log_dir = get_log_dir(policy_cfg.log_dir)
 
     rollout_video = RolloutVideo(
@@ -202,19 +217,18 @@ def main(policy_cfg: DictConfig) -> None:
     task_oracle = hydra.utils.instantiate(policy_cfg.tasks)
     tasks = generate_tasks(policy_cfg.num_sequences)
 
-    success_count = 0
-    for task_nr, (initial_state, task) in tqdm(enumerate(tasks), total=len(tasks), desc="Evaluating Model"):
-        logger.info(f"task: {task}")
-
+    success_counter = Counter()
+    failure_counter = Counter()
+    for task_nr, (initial_state, task) in tqdm(enumerate(tasks), total=len(tasks), desc="Evaluating model"):
         # reset env
         robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
         env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
 
         # get base64 encoded image of first frame of static camera
         static_img_start, _ = env.cameras[0].render()
-        Image.fromarray(static_img_start).save(f"input_image.png")
-        with open("input_image.png", "rb") as file:
-            base64_img = base64.b64encode(file.read()).decode("utf-8")
+        img_bytes = io.BytesIO()
+        Image.fromarray(static_img_start).save(img_bytes, format="PNG")
+        base64_img = base64.b64encode(img_bytes.getvalue()).decode("utf-8")
 
         # query VLM for trajectory
         prompt = build_prompt(task)
@@ -229,26 +243,25 @@ def main(policy_cfg: DictConfig) -> None:
                     },{
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:input_image/png;base64,{base64_img}"
+                            "url": f"data:image/png;base64,{base64_img}"
                         }
                     }
                 ]
             }],
         )
 
-        gripper_points, gripper_actions = extract_gripper_points(response)
-
+        gripper_points, gripper_actions = extract_gripper_points(response.choices[0].message.content)
         static_traj_img = draw_trajectory(static_img_start, gripper_points, gripper_actions)
-
         Image.fromarray(static_traj_img).save(f"traj_img_{task}.png")
 
         success = rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task_oracle, rollout_video)
         if success:
-            success_count += 1
-        
-    logger.info(f"Success rate: {success_count}/{len(tasks)}")
-
-    os.remove("input_image.png")
+            success_counter[task] += 1
+        else:
+            failure_counter[task] += 1
+    
+    total_task_counter = success_counter + failure_counter
+    print_success_rate(total_task_counter, success_counter)
 
 
 if __name__ == "__main__":

@@ -43,5 +43,5 @@ CUDA_VISIBLE_DEVICES=0 llamafactory-cli api iTRAP/models/Qwen2-VL/inference_conf
 ```
 Start the evaluation script in the second terminal:
 ```bash
-python iTRAP/evaluation/evaluate.py
+python iTRAP/evaluation/itrap_evaluate.py
 ```
