@@ -185,16 +185,17 @@ def rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task
     return success
 
 
-def print_success_rate(total_task_counter, success_counter):
+def log_success_rate(logger, total_task_counter, success_counter):
     max_task_len = max([len(task) for task in total_task_counter])
 
     for task in total_task_counter:
-        print(f"{task:<{max_task_len}}: {success_counter[task]} / {total_task_counter[task]} | SR: {success_counter[task] / total_task_counter[task] * 100:.2f} %")
-    print(f"Total SR: {sum(success_counter.values()) / sum(total_task_counter.values()) * 100:.2f}%")
+        logger.info(f"{task:<{max_task_len}}: {success_counter[task]} / {total_task_counter[task]} | \
+                SR: {success_counter[task] / total_task_counter[task] * 100:.2f} %")
+    logger.info(f"Total SR: {sum(success_counter.values()) / sum(total_task_counter.values()) * 100:.2f}%")
 
 
 @hydra.main(config_path="../models/MoDE_Diffusion_Policy/conf", config_name="mode_evaluate")
-def main(policy_cfg: DictConfig) -> None:
+def main(policy_cfg: DictConfig, save_traj_imgs=False) -> None:
     # make sure policy runs on GPUs 1, 2, 3 (GPU 0 used by VLM)
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3"
@@ -252,7 +253,9 @@ def main(policy_cfg: DictConfig) -> None:
 
         gripper_points, gripper_actions = extract_gripper_points(response.choices[0].message.content)
         static_traj_img = draw_trajectory(static_img_start, gripper_points, gripper_actions)
-        Image.fromarray(static_traj_img).save(f"traj_img_{task}.png")
+
+        if save_traj_imgs:
+            Image.fromarray(static_traj_img).save(f"traj_img_{task_nr}_{task}.png")
 
         success = rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task_oracle, rollout_video)
         if success:
@@ -261,10 +264,10 @@ def main(policy_cfg: DictConfig) -> None:
             failure_counter[task] += 1
     
     total_task_counter = success_counter + failure_counter
-    print_success_rate(total_task_counter, success_counter)
+    log_success_rate(logger, total_task_counter, success_counter)
 
 
 if __name__ == "__main__":
     sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "MoDE_Diffusion_Policy" / "calvin_env"))
 
-    main()
+    main(save_traj_imgs=True)
