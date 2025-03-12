@@ -34,9 +34,10 @@ pip install rdp
 pip install dtw-python
 pip install -r requirements.txt
 pip uninstall -y opencv-python # clashes with opencv-python-headless
+cd ..
 
 # Qwen2-VL
 echo "${GREEN}Installing Qwen2-VL (2/2)${NC}"
-cd iTRAP/models/Qwen2-VL/LLaMA-Factory
+cd Qwen2-VL/LLaMA-Factory
 pip install -e ".[torch,metrics]"
-cd ../../..
+cd ../../../..
