@@ -4,7 +4,6 @@ import logging
 import os
 from pathlib import Path
 import re
-import subprocess
 import sys
 from collections import Counter
 import cv2
@@ -20,15 +19,19 @@ sys.path.append(str(Path(__file__).absolute().parents[2]))
 sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "MoDE_Diffusion_Policy"))
 from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.utils import get_default_mode_and_env, get_env_state_for_initial_condition
 from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.multistep_sequences import get_sequences
-from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.mode_evaluate import get_log_dir
 from iTRAP.models.MoDE_Diffusion_Policy.mode.rollout.rollout_video import RolloutVideo
 
 
 
 MODEL_PATH = "path/to/model"
 
-# TODO: debug rollout_video
 
+
+def _get_log_dir(cfg_log_dir):
+    log_dir = Path(cfg_log_dir)
+    latest_run_day = sorted(log_dir.iterdir(), key=os.path.getmtime)[-1]
+    latest_run_time = sorted(latest_run_day.iterdir(), key=os.path.getmtime)[-1]
+    return latest_run_time
 
 
 def setup_vlm_server():
@@ -65,7 +68,9 @@ def setup_policy(cfg):
 
     model.eval()
 
-    return model, env
+    global_step = int(cfg.checkpoint.split('=')[-1].split('_')[0]) * 1000 # 1000 steps per epoch
+
+    return model, env, global_step
 
 
 def generate_tasks(num_tasks) -> list:
@@ -155,22 +160,22 @@ def draw_trajectory(img, gripper_points, gripper_actions, traj_color="red"):
     return img_copy
 
 
-def rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task_oracle, rollout_video):
+def rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task_oracle, rollout_video, policy_global_step):
     obs = env.get_obs()
     goal = {"vis_image": torch.tensor(static_traj_img), "lang_text": task}
 
     policy.reset()
     start_info = env.get_info()
 
-    rollout_video.new_video(tag=f"{task_nr:03d}_{task}", caption=task)
-    rollout_video.new_subtask() # TODO: required?
+    rollout_video.new_video(tag=f"{task_nr:04d}_{task}", caption=task)
 
     success = False
     for step in tqdm(range(policy_cfg.ep_len), desc=f"Rolling out policy for task {task}", leave=False):
         action = policy.step(obs, goal)
         obs, _, _, current_info = env.step(action)
 
-        rollout_video.update(obs["rgb_obs"]["rgb_static"])
+        normalized_rgb_static = obs["rgb_obs"]["rgb_static"] / 127.5 - 1 # normalize to [-1, 1]
+        rollout_video.update(normalized_rgb_static) # shape: B, F, C, H, W
 
         # check if current steps solves task
         current_task_info = task_oracle.get_task_info_for_set(start_info, current_info, {task})
@@ -178,9 +183,14 @@ def rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task
             success = True
             break
     
-    rollout_video.add_language_instruction(task)
     rollout_video.draw_outcome(success)
-    rollout_video.write_to_tmp()
+    rollout_video.add_language_instruction(task)
+
+    # FIXME: add goal image as video thumbnail
+    #normalized_goal_img = goal["vis_image"] / 127.5 - 1 # normalize to [-1, 1]
+    #rollout_video.add_goal_thumbnail(normalized_goal_img.permute(2, 0, 1)) # shape: C, H, W
+
+    rollout_video.log(policy_global_step)
 
     return success
 
@@ -188,35 +198,35 @@ def rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task
 def log_success_rate(logger, total_task_counter, success_counter):
     max_task_len = max([len(task) for task in total_task_counter])
 
+    logger.info("Evaluation results:")
     for task in total_task_counter:
-        logger.info(f"{task:<{max_task_len}}: {success_counter[task]} / {total_task_counter[task]} | \
-                SR: {success_counter[task] / total_task_counter[task] * 100:.2f} %")
+        logger.info(f"{task:<{max_task_len}}: {success_counter[task]} / {total_task_counter[task]} | SR: {success_counter[task] / total_task_counter[task] * 100:.2f} %")
     logger.info(f"Total SR: {sum(success_counter.values()) / sum(total_task_counter.values()) * 100:.2f}%")
 
 
 @hydra.main(config_path="../models/MoDE_Diffusion_Policy/conf", config_name="mode_evaluate")
-def main(policy_cfg: DictConfig, save_traj_imgs=False) -> None:
+def main(policy_cfg: DictConfig) -> None:
     # make sure policy runs on GPUs 1, 2, 3 (GPU 0 used by VLM)
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3"
 
-    policy, env = setup_policy(policy_cfg)
+    policy, env, policy_global_step = setup_policy(policy_cfg)
 
-    client = setup_vlm_server()
+    vlm_client = setup_vlm_server()
 
     logger = logging.getLogger(__name__)
-    log_dir = get_log_dir(policy_cfg.log_dir)
+    log_dir = _get_log_dir(policy_cfg.log_dir)
 
     rollout_video = RolloutVideo(
             logger=logger,
             empty_cache=False,
             log_to_file=True,
-            save_dir=Path(log_dir),
+            save_dir=Path(log_dir) / "rollout_videos",
             resolution_scale=1,
         )
 
-    task_oracle = hydra.utils.instantiate(policy_cfg.tasks)
     tasks = generate_tasks(policy_cfg.num_sequences)
+    task_oracle = hydra.utils.instantiate(policy_cfg.tasks)
 
     success_counter = Counter()
     failure_counter = Counter()
@@ -233,7 +243,7 @@ def main(policy_cfg: DictConfig, save_traj_imgs=False) -> None:
 
         # query VLM for trajectory
         prompt = build_prompt(task)
-        response = client.chat.completions.create(
+        response = vlm_client.chat.completions.create(
             model="qwen2-vl",
             messages=[{
                 "role": "user",
@@ -255,9 +265,10 @@ def main(policy_cfg: DictConfig, save_traj_imgs=False) -> None:
         static_traj_img = draw_trajectory(static_img_start, gripper_points, gripper_actions)
 
         if save_traj_imgs:
-            Image.fromarray(static_traj_img).save(f"traj_img_{task_nr}_{task}.png")
+            os.makedirs("traj_imgs", exist_ok=True)
+            Image.fromarray(static_traj_img).save(f"traj_imgs/{task_nr:04d}_{task}.png")
 
-        success = rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task_oracle, rollout_video)
+        success = rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task_oracle, rollout_video, policy_global_step)
         if success:
             success_counter[task] += 1
         else:
@@ -270,4 +281,5 @@ def main(policy_cfg: DictConfig, save_traj_imgs=False) -> None:
 if __name__ == "__main__":
     sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "MoDE_Diffusion_Policy" / "calvin_env"))
 
-    main(save_traj_imgs=True)
+    save_traj_imgs = True
+    main()
