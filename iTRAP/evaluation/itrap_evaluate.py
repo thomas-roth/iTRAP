@@ -4,6 +4,7 @@ import logging
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 from collections import Counter
 import cv2
@@ -35,6 +36,10 @@ def _get_log_dir(cfg_log_dir):
 
 
 def setup_vlm_server():
+    # start VLM server
+    subprocess.run(["llamafactory-cli", "api", "iTRAP/models/Qwen2-VL/inference_config.yaml"])
+
+    # setup VLM client
     client = OpenAI(api_key="0", base_url="http://localhost:8000/v1")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     return client
@@ -160,9 +165,52 @@ def draw_trajectory(img, gripper_points, gripper_actions, traj_color="red"):
     return img_copy
 
 
-def rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task_oracle, rollout_video, policy_global_step):
+def query_vlm(env, vlm_client, task):
+    # get base64 encoded image of first frame of static camera
+    static_img_start, _ = env.cameras[0].render()
+    img_bytes = io.BytesIO()
+    Image.fromarray(static_img_start).save(img_bytes, format="PNG")
+    base64_img = base64.b64encode(img_bytes.getvalue()).decode("utf-8")
+
+    # query VLM for trajectory
+    prompt = build_prompt(task)
+    response = vlm_client.chat.completions.create(
+        model="qwen2-vl",
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": prompt
+                },{
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{base64_img}"
+                    }
+                }
+            ]
+        }],
+    )
+
+    return response.choices[0].message.content
+
+
+def build_trajectory_image(env, vlm_response, save_traj_imgs, task_nr=0, task=""):
+    static_img_start, _ = env.cameras[0].render()
+
+    gripper_points, gripper_actions = extract_gripper_points(vlm_response)
+    static_traj_img = draw_trajectory(static_img_start, gripper_points, gripper_actions)
+
+    if save_traj_imgs:
+        os.makedirs("traj_imgs", exist_ok=True)
+        Image.fromarray(static_traj_img).save(f"traj_imgs/{task_nr:04d}_{task}.png")
+
+    return torch.tensor(static_traj_img)
+
+
+def rollout_policy(policy_cfg, env, vlm_client, policy, task_nr, task, task_oracle, rollout_video, policy_global_step):
     obs = env.get_obs()
-    goal = {"vis_image": torch.tensor(static_traj_img), "lang_text": task}
+    goal = {"lang_text": task}
 
     policy.reset()
     start_info = env.get_info()
@@ -171,7 +219,10 @@ def rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task
 
     success = False
     for step in tqdm(range(policy_cfg.ep_len), desc=f"Rolling out policy for task {task}", leave=False):
-        action = policy.step(obs, goal)
+        response = query_vlm(env, vlm_client, task)
+        static_traj_img = build_trajectory_image(env, response, save_traj_imgs, task_nr, task)
+
+        action = policy.step(rgb_static=static_traj_img, rgb_gripper=obs["rgb_obs"]["rgb_gripper"], goal=goal)
         obs, _, _, current_info = env.step(action)
 
         normalized_rgb_static = obs["rgb_obs"]["rgb_static"] / 127.5 - 1 # normalize to [-1, 1]
@@ -206,13 +257,15 @@ def log_success_rate(logger, total_task_counter, success_counter):
 
 @hydra.main(config_path="../models/MoDE_Diffusion_Policy/conf", config_name="mode_evaluate")
 def main(policy_cfg: DictConfig) -> None:
-    # make sure policy runs on GPUs 1, 2, 3 (GPU 0 used by VLM)
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3"
 
-    policy, env, policy_global_step = setup_policy(policy_cfg)
-
+    # make sure VLM runs on GPU 0
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     vlm_client = setup_vlm_server()
+
+    # make sure policy runs on GPUs 1, 2 & 3
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3"
+    policy, env, policy_global_step = setup_policy(policy_cfg)
 
     logger = logging.getLogger(__name__)
     log_dir = _get_log_dir(policy_cfg.log_dir)
@@ -235,40 +288,7 @@ def main(policy_cfg: DictConfig) -> None:
         robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
         env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
 
-        # get base64 encoded image of first frame of static camera
-        static_img_start, _ = env.cameras[0].render()
-        img_bytes = io.BytesIO()
-        Image.fromarray(static_img_start).save(img_bytes, format="PNG")
-        base64_img = base64.b64encode(img_bytes.getvalue()).decode("utf-8")
-
-        # query VLM for trajectory
-        prompt = build_prompt(task)
-        response = vlm_client.chat.completions.create(
-            model="qwen2-vl",
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt
-                    },{
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{base64_img}"
-                        }
-                    }
-                ]
-            }],
-        )
-
-        gripper_points, gripper_actions = extract_gripper_points(response.choices[0].message.content)
-        static_traj_img = draw_trajectory(static_img_start, gripper_points, gripper_actions)
-
-        if save_traj_imgs:
-            os.makedirs("traj_imgs", exist_ok=True)
-            Image.fromarray(static_traj_img).save(f"traj_imgs/{task_nr:04d}_{task}.png")
-
-        success = rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task_oracle, rollout_video, policy_global_step)
+        success = rollout_policy(policy_cfg, env, vlm_client, policy, task_nr, task, task_oracle, rollout_video, policy_global_step)
         if success:
             success_counter[task] += 1
         else:
