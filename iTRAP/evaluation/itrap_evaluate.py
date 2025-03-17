@@ -4,7 +4,6 @@ import logging
 import os
 from pathlib import Path
 import re
-import subprocess
 import sys
 from collections import Counter
 import cv2
@@ -36,9 +35,6 @@ def _get_log_dir(cfg_log_dir):
 
 
 def setup_vlm_server():
-    # start VLM server
-    subprocess.run(["llamafactory-cli", "api", "iTRAP/models/Qwen2-VL/inference_config.yaml"])
-
     # setup VLM client
     client = OpenAI(api_key="0", base_url="http://localhost:8000/v1")
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -165,7 +161,7 @@ def draw_trajectory(img, gripper_points, gripper_actions, traj_color="red"):
     return img_copy
 
 
-def query_vlm(env, vlm_client, task):
+def query_vlm(env, vlm_client, task, local_rank=0, logger=None):
     # get base64 encoded image of first frame of static camera
     static_img_start, _ = env.cameras[0].render()
     img_bytes = io.BytesIO()
@@ -174,6 +170,9 @@ def query_vlm(env, vlm_client, task):
 
     # query VLM for trajectory
     prompt = build_prompt(task)
+
+    logger.warning(f"before request, rank: {local_rank}, task: {task}") # TODO: remove after debugging
+
     response = vlm_client.chat.completions.create(
         model="qwen2-vl",
         messages=[{
@@ -189,8 +188,10 @@ def query_vlm(env, vlm_client, task):
                     }
                 }
             ]
-        }],
+        }]
     )
+
+    logger.warning(f"after request, rank: {local_rank}, task: {task}") # TODO: remove after debugging
 
     return response.choices[0].message.content
 
