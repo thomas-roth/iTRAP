@@ -24,7 +24,7 @@ This repository contains the code and benchmarks for my Bachelor's thesis titled
 ```bash
 git clone --recurse-submodules git@github.com:thomas-roth/iTRAP.git
 cd iTRAP
-conda create -n itrap python=3.9
+conda create -n itrap python=3.9 -y
 conda activate itrap
 sh install_packages.sh
 ```
