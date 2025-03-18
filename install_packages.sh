@@ -38,6 +38,4 @@ cd ..
 
 # Qwen2-VL
 echo "${GREEN}Installing Qwen2-VL (2/2)${NC}"
-cd Qwen2-VL/LLaMA-Factory
-pip install -e ".[torch,metrics]"
-cd ../../../..
+pip install vllm

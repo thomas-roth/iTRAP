@@ -34,8 +34,7 @@ def _get_log_dir(cfg_log_dir):
     return latest_run_time
 
 
-def setup_vlm_server():
-    # setup VLM client
+def setup_vlm_client():
     client = OpenAI(api_key="0", base_url="http://localhost:8000/v1")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     return client
@@ -104,6 +103,11 @@ def extract_gripper_points(response):
 
     gripper_points = []
     for match in re.finditer(regex_gripper_points, response):
+        if match is None:
+            # should not happen, but did happen once ):
+            print(f"\u001b[31mError: Invalid gripper point in response: {response}. Skipping match\u001b[0m")
+            continue
+
         x = float(match.group(1))
         y = float(match.group(2))
         gripper_points.append((x, y))
@@ -161,7 +165,7 @@ def draw_trajectory(img, gripper_points, gripper_actions, traj_color="red"):
     return img_copy
 
 
-def query_vlm(env, vlm_client, task, local_rank=0, logger=None):
+def query_vlm(env, vlm_client, task):
     # get base64 encoded image of first frame of static camera
     static_img_start, _ = env.cameras[0].render()
     img_bytes = io.BytesIO()
@@ -170,8 +174,6 @@ def query_vlm(env, vlm_client, task, local_rank=0, logger=None):
 
     # query VLM for trajectory
     prompt = build_prompt(task)
-
-    logger.warning(f"before request, rank: {local_rank}, task: {task}") # TODO: remove after debugging
 
     response = vlm_client.chat.completions.create(
         model="qwen2-vl",
@@ -190,8 +192,6 @@ def query_vlm(env, vlm_client, task, local_rank=0, logger=None):
             ]
         }]
     )
-
-    logger.warning(f"after request, rank: {local_rank}, task: {task}") # TODO: remove after debugging
 
     return response.choices[0].message.content
 
@@ -262,7 +262,7 @@ def main(policy_cfg: DictConfig) -> None:
 
     # make sure VLM runs on GPU 0
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-    vlm_client = setup_vlm_server()
+    vlm_client = setup_vlm_client()
 
     # make sure policy runs on GPUs 1, 2 & 3
     os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3"
