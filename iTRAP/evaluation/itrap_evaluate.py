@@ -34,7 +34,7 @@ def _get_log_dir(cfg_log_dir):
     return latest_run_time
 
 
-def setup_vlm_server():
+def setup_vlm_client():
     client = OpenAI(api_key="0", base_url="http://localhost:8000/v1")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     return client
@@ -92,6 +92,38 @@ def build_prompt(task_desc: str) -> list:
             "(0.139, 0.242), <action>Open Gripper</action>, (0.746, 0.218), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
             "an x and y location of the end effector of the gripper in the image. The action tags indicate the gripper action. " \
             "The coordinates should be floats ranging between 0 and 1, indicating the relative location of the points in the image."
+
+
+def query_vlm(env, vlm_client, task):
+    # get base64 encoded image of first frame of static camera
+    static_img_start, _ = env.cameras[0].render()
+    img_bytes = io.BytesIO()
+    Image.fromarray(static_img_start).save(img_bytes, format="PNG")
+    base64_img = base64.b64encode(img_bytes.getvalue()).decode("utf-8")
+
+    # build prompt text from task
+    prompt = build_prompt(task)
+    
+    # query VLM for trajectory string
+    response = vlm_client.chat.completions.create(
+        model="qwen2-vl",
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": prompt
+                },{
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{base64_img}"
+                    }
+                }
+            ]
+        }],
+    )
+
+    return response.choices[0].message.content
 
 
 def extract_gripper_points(response):
@@ -160,6 +192,19 @@ def draw_trajectory(img, gripper_points, gripper_actions, traj_color="red"):
     return img_copy
 
 
+def build_trajectory_image(env, vlm_response, save_traj_imgs, task_nr, task):
+    static_img_start, _ = env.cameras[0].render()
+
+    gripper_points, gripper_actions = extract_gripper_points(vlm_response)
+    static_traj_img = draw_trajectory(static_img_start, gripper_points, gripper_actions)
+
+    if save_traj_imgs:
+        os.makedirs("traj_imgs", exist_ok=True)
+        Image.fromarray(static_traj_img).save(f"traj_imgs/{task_nr:04d}_{task}.png")
+
+    return torch.tensor(static_traj_img)
+
+
 def rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task_oracle, rollout_video, policy_global_step):
     obs = env.get_obs()
     goal = {"vis_image": torch.tensor(static_traj_img), "lang_text": task}
@@ -212,7 +257,7 @@ def main(policy_cfg: DictConfig) -> None:
 
     policy, env, policy_global_step = setup_policy(policy_cfg)
 
-    vlm_client = setup_vlm_server()
+    vlm_client = setup_vlm_client()
 
     logger = logging.getLogger(__name__)
     log_dir = _get_log_dir(policy_cfg.log_dir)
@@ -235,38 +280,9 @@ def main(policy_cfg: DictConfig) -> None:
         robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
         env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
 
-        # get base64 encoded image of first frame of static camera
-        static_img_start, _ = env.cameras[0].render()
-        img_bytes = io.BytesIO()
-        Image.fromarray(static_img_start).save(img_bytes, format="PNG")
-        base64_img = base64.b64encode(img_bytes.getvalue()).decode("utf-8")
+        response = query_vlm(env, vlm_client, task)
 
-        # query VLM for trajectory
-        prompt = build_prompt(task)
-        response = vlm_client.chat.completions.create(
-            model="qwen2-vl",
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt
-                    },{
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{base64_img}"
-                        }
-                    }
-                ]
-            }],
-        )
-
-        gripper_points, gripper_actions = extract_gripper_points(response.choices[0].message.content)
-        static_traj_img = draw_trajectory(static_img_start, gripper_points, gripper_actions)
-
-        if save_traj_imgs:
-            os.makedirs("traj_imgs", exist_ok=True)
-            Image.fromarray(static_traj_img).save(f"traj_imgs/{task_nr:04d}_{task}.png")
+        static_traj_img = build_trajectory_image(env, response, save_traj_imgs, task_nr, task)
 
         success = rollout_policy(policy_cfg, env, policy, task_nr, task, static_traj_img, task_oracle, rollout_video, policy_global_step)
         if success:

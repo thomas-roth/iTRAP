@@ -39,9 +39,11 @@ sh install_packages.sh
 To evaluate the model, two terminal sessions need to be started.
 Start the VLM server in the first terminal:
 ```bash
-CUDA_VISIBLE_DEVICES=0 llamafactory-cli api iTRAP/models/Qwen2-VL/inference_config.yaml
+conda activate itrap
+sh iTRAP/models/Qwen2-VL/start_vlm_server.sh
 ```
 Start the evaluation script in the second terminal:
 ```bash
+conda activate itrap
 python iTRAP/evaluation/itrap_evaluate.py
 ```
