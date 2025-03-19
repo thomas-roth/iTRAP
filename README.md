@@ -42,11 +42,10 @@ This repository contains the code and benchmarks for my Bachelor's thesis titled
 ## Setup and Installation
 
 ### Prerequisites
-Make sure Xlib & gcc libraries are installed. They can be installed by executing:
+Make sure Xlib libraries are installed. They can be installed by executing:
 ```bash
 sudo apt update
-sudo apt install libx11-dev mesa-common-dev libegl1-mesa-dev libgl1-mesa-dev
-sudo apt-get install gcc-multilib
+sudo apt install -y libx11-dev mesa-common-dev libegl1-mesa-dev libgl1-mesa-dev
 ```
 
 ### Installation Steps
@@ -69,19 +68,29 @@ sh download_data.sh <split>
 
 ### Training
 To train the VLM on CALVIN, follow the steps below:
-1. Build the VLM dataset by executing:
+1. Build the VLM dataset:
     ```bash
     python $ITRAP_ROOT/iTRAP/datasets/calvin/calvin_vlm_dataset_builder.py --dataset-path $ITRAP_ROOT/iTRAP/datasets/calvin/task_<split> --output-dir $ITRAP_ROOT/iTRAP/models/Qwen2-VL/dataset/task_<split>
     ```
 2. Train the VLM using LLaMA-Factory
 
 To train the policy on CALVIN, follow the steps below:
-1. Build the policy dataset by executing:
+1. Build the policy dataset:
     ```bash
     python $ITRAP_ROOT/iTRAP/datasets/calvin/calvin_policy_dataset_builder.py --dataset-path $ITRAP_ROOT/iTRAP/datasets/calvin/task_<split> --output-dir $ITRAP_ROOT/iTRAP/models/MoDE_Diffusion_Policy/dataset/task_<split>
     ```
-2. Adjust the training parameters in the config files ([main config](iTRAP/models/MoDE_Diffusion_Policy/conf/config_calvin.yaml), [checkpoint path, optimizer & lr scheduler](iTRAP/models/MoDE_Diffusion_Policy/conf/model/mode_agent.yaml), [rollout config](iTRAP/models/MoDE_Diffusion_Policy/conf/callbacks/rollout_lh/calvin.yaml)).
-3. Start the training by executing:
+2. Choose & download a pretrained policy from the [collection](https://huggingface.co/collections/mbreuss/mode-6760239f42bc757093b6de13):
+    ```bash
+    cd $ITRAP_ROOT/iTRAP/models/MoDE_Diffusion_Policy
+    mkdir pretrained
+    cd pretrained
+    git clone <chosen_pretrained_policy>
+    cd <chosen_pretrained_policy>
+    mkdir .hydra
+    mv config.yaml .hydra/config.yaml
+    ```
+3. Adjust the training parameters in the config files ([main config](iTRAP/models/MoDE_Diffusion_Policy/conf/config_calvin.yaml), [checkpoint path, optimizer & lr scheduler](iTRAP/models/MoDE_Diffusion_Policy/conf/model/mode_agent.yaml), [rollout config](iTRAP/models/MoDE_Diffusion_Policy/conf/callbacks/rollout_lh/calvin.yaml)).
+4. Start the training:
     ```bash
     python iTRAP/models/MoDE_Diffusion_Policy/mode/training_calvin.py
     ```
