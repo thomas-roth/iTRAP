@@ -1,3 +1,4 @@
+import argparse
 import datetime
 import os
 import sys
@@ -15,8 +16,8 @@ from calvin_dataset_builder import CalvinDatasetBuilder
 
 
 class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
-    def __init__(self, timestamp, dataset_path="/DATA/calvin/task_D_D", traj_simplification_rdp_epsilon=0.01,
-                 output_dir="/home/troth/bt/data/calvin_policy_dataset", traj_drawing_thickness=2, traj_drawing_circle_radius=5,
+    def __init__(self, timestamp, dataset_path, output_dir,
+                 traj_simplification_rdp_epsilon=0.01, traj_drawing_thickness=2, traj_drawing_circle_radius=5,
                  gif_frame_quantization_method=2, gif_frame_quantization_kmeans=1, gif_duration=67, gif_num_loops=0):
         
         self.timestamp = timestamp
@@ -184,7 +185,12 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset-path", type=str, default="/DATA/calvin/task_D_D")
+    parser.add_argument("--output-dir", type=str, default="/home/troth/bt/data/calvin_policy_dataset")
+    args = parser.parse_args()
+
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     
-    calvin_policy_dataset_builder = CalvinPolicyDatasetBuilder(timestamp=timestamp)
+    calvin_policy_dataset_builder = CalvinPolicyDatasetBuilder(timestamp=timestamp, dataset_path=args.dataset_path, output_dir=args.output_dir)
     calvin_policy_dataset_builder.build_dataset()

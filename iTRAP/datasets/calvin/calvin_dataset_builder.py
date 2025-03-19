@@ -1,3 +1,4 @@
+import os
 import sys
 import logging
 import hydra
@@ -20,8 +21,10 @@ class CalvinDatasetBuilder(ABC):
     AUTO_VIS_LANG_ANN_FOLDER = "vis_lang_clip_vit-b16_resnet50"
 
 
-    def __init__(self, dataset_path="/DATA/calvin/task_D_D", traj_simplification_rdp_epsilon=0.01):
+    def __init__(self, dataset_path, traj_simplification_rdp_epsilon):
         self.dataset_path = dataset_path
+        os.makedirs(dataset_path, exist_ok=True)
+
         self.traj_simplification_rdp_epsilon = traj_simplification_rdp_epsilon # unit of world coordinates (meters?) => 0.01 = 1 cm?, 0.01 ≈ 6.8 points per trajectory
                                                                                # TODO: figure out world coords unit
 

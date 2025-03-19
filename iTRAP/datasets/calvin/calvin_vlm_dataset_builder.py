@@ -1,3 +1,4 @@
+import argparse
 import datetime
 import os
 import logging
@@ -9,8 +10,8 @@ from calvin_dataset_builder import CalvinDatasetBuilder
 
 
 class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
-    def __init__(self, timestamp, dataset_path="/DATA/calvin/task_D_D", traj_simplification_rdp_epsilon=0.01,
-                 output_dir="/home/troth/bt/data/calvin_vlm_dataset", traj_string_coords_precision=3):
+    def __init__(self, timestamp, dataset_path, output_dir,
+                 traj_simplification_rdp_epsilon=0.01, traj_string_coords_precision=3):
         
         self.timestamp = timestamp
         super().__init__(dataset_path, traj_simplification_rdp_epsilon)
@@ -133,7 +134,12 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
 
 
 if __name__ == '__main__':
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset-path", type=str, default="/DATA/calvin/task_D_D")
+    parser.add_argument("--output-dir", type=str, default="/home/troth/bt/data/calvin_policy_dataset")
+    args = parser.parse_args()
     
-    calvin_vlm_dataset_builder = CalvinVLMDatasetBuilder(timestamp=timestamp)
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+    calvin_vlm_dataset_builder = CalvinVLMDatasetBuilder(timestamp=timestamp, dataset_path=args.dataset_path, output_dir=args.output_dir)
     calvin_vlm_dataset_builder.build_dataset()
