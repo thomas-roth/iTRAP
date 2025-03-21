@@ -11,6 +11,7 @@ import hydra
 from omegaconf import DictConfig
 from openai import OpenAI
 from pytorch_lightning import seed_everything
+from termcolor import colored
 import torch
 from tqdm import tqdm
 from PIL import Image
@@ -99,13 +100,18 @@ def extract_gripper_points(response):
     regex_gripper_points = r"\(([0-9.]+),\s*([0-9.]+)\)"
     regex_gripper_actions = r"<action>(.*?)</action>"
 
-    response = re.search(regex_ans, response, re.DOTALL).group(1)
+    response = re.search(regex_ans, response, re.DOTALL)
+    if response is None:
+        print(colored(f"Error: Invalid response: {response}. Skipping task", "red"))
+        return [], []
+    else:
+        response = response.group(1)
 
     gripper_points = []
     for match in re.finditer(regex_gripper_points, response):
         if match is None:
             # should not happen, but did happen once ):
-            print(f"\u001b[31mError: Invalid gripper point in response: {response}. Skipping match\u001b[0m")
+            print(colored(f"Error: Invalid gripper point in response: {response}. Skipping match", "red"))
             continue
 
         x = float(match.group(1))
@@ -114,6 +120,11 @@ def extract_gripper_points(response):
     
     gripper_actions = []
     for match in re.finditer(regex_gripper_actions, response):
+        if match is None:
+            # should not happen, but did happen once ):
+            print(colored(f"Error: Invalid gripper action in response: {response}. Skipping match", "red"))
+            continue
+
         action = match.group(1)
         action_start_pos = match.start()
         gripper_actions.append((action_start_pos, action))
@@ -136,12 +147,16 @@ def extract_gripper_points(response):
 
 
 def draw_trajectory(img, gripper_points, gripper_actions, traj_color="red"):
+    if gripper_points == []:
+        # gripper_actions is empty as well, error msg already printed in extract_gripper_points
+        return img
+
     img_copy = img.copy()
     
     assert img_copy.shape[0] == img_copy.shape[1]
     img_size = img_copy.shape[0]
 
-    scaled_gripper_points = [(int(x * img_size), int(y * img_size)) for x, y in gripper_points]
+    scaled_gripper_points = [(int(x * img_size), int(y * img_size)) for (x, y) in gripper_points]
     scaled_gripper_actions = [((int(x * img_size), int(y * img_size)), action) for ((x, y), action) in gripper_actions]
 
     for i in range(len(scaled_gripper_points) - 1):
@@ -196,13 +211,15 @@ def query_vlm(env, vlm_client, task):
     return response.choices[0].message.content
 
 
-def build_trajectory_image(env, vlm_response, save_traj_imgs, task_nr=0, task=""):
+def build_trajectory_image(env, vlm_response, save_traj_imgs, task_nr=-1, task=""):
     static_img_start, _ = env.cameras[0].render()
 
     gripper_points, gripper_actions = extract_gripper_points(vlm_response)
     static_traj_img = draw_trajectory(static_img_start, gripper_points, gripper_actions)
 
     if save_traj_imgs:
+        if task_nr == -1 or task == "":
+            print(colored("Warning: No task description provided for traj img saving. Make sure to provide task and task_nr", "yellow"))
         os.makedirs("traj_imgs", exist_ok=True)
         Image.fromarray(static_traj_img).save(f"traj_imgs/{task_nr:04d}_{task}.png")
 
