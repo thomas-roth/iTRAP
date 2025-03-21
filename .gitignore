@@ -1,5 +1,7 @@
 /outputs
 /logs
 
+pretrained
+
 .vscode
 __pycache__
