@@ -16,12 +16,12 @@ class CalvinDatasetBuilder(ABC):
     # don't touch
     CALVIN_GRIPPER_WIDTH_OPEN = 1.0
     CALVIN_GRIPPER_WIDTH_CLOSED = -1.0
-    CLIP_VIS_CFG_PATH = "models/MoDE_Diffusion_Policy/conf/model/mode_agent.yaml"
+    VIS_ENCODER_CFG_PATH = "models/MoDE_Diffusion_Policy/conf/model/mode_agent.yaml"
     AUTO_LANG_ANN_FOLDER = "lang_clip_resnet50"
     AUTO_VIS_LANG_ANN_FOLDER = "vis_lang_clip_vit-b16_resnet50"
 
 
-    def __init__(self, dataset_path, traj_simplification_rdp_epsilon):
+    def __init__(self, dataset_path, traj_simplification_rdp_epsilon=0.01):
         self.dataset_path = dataset_path
         os.makedirs(dataset_path, exist_ok=True)
 
@@ -89,6 +89,7 @@ class CalvinDatasetBuilder(ABC):
         traj_strings_all_seqs = []
         start_imgs_all_seqs = []
         traj_imgs_all_seqs = []
+        transformed_traj_imgs_all_seqs = []
         for i, seq in tqdm(enumerate(self.dataloader), total=len(self.dataloader), desc=f"Building trajectories for {dataset_split} split"):
             assert len(seq["obs"]["robot_obs"]) == len(seq["obs"]["rel_actions"]) == len(seq["obs"]["rgb_static"]) == len(seq["obs"]["rgb_gripper"])
 
@@ -109,12 +110,13 @@ class CalvinDatasetBuilder(ABC):
 
             # build trajectory representation (trajectory images or trajectory string & start images)
             traj_representations = self.build_trajectory_representation(simplified_gripper_centers_world, simplified_gripper_widths)
-            if traj_representations.keys() == {"traj_imgs_seq"}:
+            if traj_representations.keys() == {"traj_imgs_seq", "transformed_traj_imgs_seq"}:
                 traj_imgs_all_seqs.append(traj_representations["traj_imgs_seq"])
+                transformed_traj_imgs_all_seqs.append(traj_representations["transformed_traj_imgs_seq"])
             elif traj_representations.keys() == {"traj_string_seq", "start_imgs_seq"}:
                 traj_strings_all_seqs.append(traj_representations["traj_string_seq"])
                 start_imgs_all_seqs.append(traj_representations["start_imgs_seq"])
 
         self._logger.info(f"Built {i+1} trajectories for {dataset_split} split, average trajectory length: {np.mean(lengths_simplified_trajs)}")
 
-        return task_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, traj_imgs_all_seqs
+        return task_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, traj_imgs_all_seqs, transformed_traj_imgs_all_seqs

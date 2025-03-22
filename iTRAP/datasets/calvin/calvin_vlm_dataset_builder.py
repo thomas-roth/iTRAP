@@ -72,7 +72,7 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         dataset_entries = []
         for i, (task_seq, traj_string_seq, start_imgs_seq) in tqdm(enumerate(zip(task_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs)),
                                                                    total=len(task_all_seqs), desc=f"Building question-answer pairs for {dataset_split} split"):
-            first_static_img = Image.fromarray(start_imgs_seq["rgb_static"])
+            first_static_img = Image.fromarray(start_imgs_seq["rgb_static"]) # TODO?: use transformed image instead of original (if yes move transforms from policy dataset builder to dataset builder)
             first_static_img_name = f"{i:0{num_digits}d}_{task_seq}_static.png"
             first_static_img.save(f"{dataset_path}/{first_static_img_name}")
 
@@ -126,7 +126,7 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
 
     def build_dataset(self):
         for dataset_split in ["training", "validation"]:
-            task_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, _ = self._build_trajectories(dataset_split)
+            task_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, _, _ = self._build_trajectories(dataset_split)
 
             self._save_trajectory_strings(task_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, dataset_split)
         
@@ -135,11 +135,11 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-path", type=str, default="/DATA/calvin/task_D_D")
-    parser.add_argument("--output-dir", type=str, default="/home/troth/bt/data/calvin_policy_dataset")
+    parser.add_argument("--dataset-path", type=str, default="/home/troth/data/task_D_D")
+    parser.add_argument("--output-dir", type=str, default="/home/troth/bt/data/calvin_vlm_dataset")
     args = parser.parse_args()
     
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
+    
     calvin_vlm_dataset_builder = CalvinVLMDatasetBuilder(timestamp=timestamp, dataset_path=args.dataset_path, output_dir=args.output_dir)
     calvin_vlm_dataset_builder.build_dataset()
