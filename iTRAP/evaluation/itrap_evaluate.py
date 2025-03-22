@@ -100,18 +100,18 @@ def extract_gripper_points(response):
     regex_gripper_points = r"\(([0-9.]+),\s*([0-9.]+)\)"
     regex_gripper_actions = r"<action>(.*?)</action>"
 
-    response = re.search(regex_ans, response, re.DOTALL)
-    if response is None:
+    response_content = re.search(regex_ans, response, re.DOTALL)
+    if response_content is None:
         print(colored(f"Error: Invalid response: {response}. Skipping task", "red"))
         return [], []
     else:
-        response = response.group(1)
+        response_content = response_content.group(1)
 
     gripper_points = []
-    for match in re.finditer(regex_gripper_points, response):
+    for match in re.finditer(regex_gripper_points, response_content):
         if match is None:
             # should not happen, but did happen once ):
-            print(colored(f"Error: Invalid gripper point in response: {response}. Skipping match", "red"))
+            print(colored(f"Error: Invalid gripper point in response: {response_content}. Skipping match", "red"))
             continue
 
         x = float(match.group(1))
@@ -119,10 +119,10 @@ def extract_gripper_points(response):
         gripper_points.append((x, y))
     
     gripper_actions = []
-    for match in re.finditer(regex_gripper_actions, response):
+    for match in re.finditer(regex_gripper_actions, response_content):
         if match is None:
             # should not happen, but did happen once ):
-            print(colored(f"Error: Invalid gripper action in response: {response}. Skipping match", "red"))
+            print(colored(f"Error: Invalid gripper action in response: {response_content}. Skipping match", "red"))
             continue
 
         action = match.group(1)
@@ -134,7 +134,7 @@ def extract_gripper_points(response):
     points_before_gripper_actions = []
     for action_start_pos, action in gripper_actions:
         prev_point_index = -1
-        for i, match in enumerate(re.finditer(regex_gripper_points, response)):
+        for i, match in enumerate(re.finditer(regex_gripper_points, response_content)):
             if match.end() < action_start_pos:
                 prev_point_index = i
             else:
