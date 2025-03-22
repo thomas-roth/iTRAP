@@ -180,9 +180,8 @@ def draw_trajectory(img, gripper_points, gripper_actions, traj_color="red"):
     return img_copy
 
 
-def query_vlm(env, vlm_client, task):
+def query_vlm(static_img_start, vlm_client, task):
     # get base64 encoded image of first frame of static camera
-    static_img_start, _ = env.cameras[0].render()
     img_bytes = io.BytesIO()
     Image.fromarray(static_img_start).save(img_bytes, format="PNG")
     base64_img = base64.b64encode(img_bytes.getvalue()).decode("utf-8")
@@ -211,9 +210,7 @@ def query_vlm(env, vlm_client, task):
     return response.choices[0].message.content
 
 
-def build_trajectory_image(env, vlm_response, save_traj_imgs, task_nr=-1, task=""):
-    static_img_start, _ = env.cameras[0].render()
-
+def build_trajectory_image(static_img_start, vlm_response, save_traj_imgs, task_nr=-1, task=""):
     gripper_points, gripper_actions = extract_gripper_points(vlm_response)
     static_traj_img = draw_trajectory(static_img_start, gripper_points, gripper_actions)
 
@@ -237,8 +234,9 @@ def rollout_policy(policy_cfg, env, vlm_client, policy, task_nr, task, task_orac
 
     success = False
     for step in tqdm(range(policy_cfg.ep_len), desc=f"Rolling out policy for task {task}", leave=False):
-        response = query_vlm(env, vlm_client, task)
-        static_traj_img = build_trajectory_image(env, response, save_traj_imgs, task_nr, task)
+        static_img_start = env.cameras[0].render()[0].squeeze()
+        response = query_vlm(static_img_start, vlm_client, task)
+        static_traj_img = build_trajectory_image(static_img_start, response, save_traj_imgs, task_nr, task)
 
         action = policy.step(rgb_static=static_traj_img, rgb_gripper=obs["rgb_obs"]["rgb_gripper"], goal=goal)
         obs, _, _, current_info = env.step(action)
