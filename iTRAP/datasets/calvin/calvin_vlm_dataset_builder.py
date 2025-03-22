@@ -28,7 +28,7 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         self._logger.info("Initialized CalvinVLMDatasetBuilder")
 
 
-    def build_trajectory_representation(self, gripper_centers_world, gripper_widths):
+    def build_trajectory_representation(self, gripper_centers_world, gripper_widths, dataset_split):
         # project simplified trajectory to static image space & generate trajectory string
 
         gripper_centers = self._project_gripper_centers_to_cam(gripper_centers_world, cam_id=0)

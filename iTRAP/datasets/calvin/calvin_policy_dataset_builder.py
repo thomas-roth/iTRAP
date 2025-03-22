@@ -39,11 +39,18 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
         with hydra.initialize(config_path="../../models/MoDE_Diffusion_Policy/conf"):
             complete_calvin_cfg = hydra.compose("config_calvin")
         train_transforms_cfg = complete_calvin_cfg.datamodule.transforms.train.rgb_static
+        val_transforms_cfg = complete_calvin_cfg.datamodule.transforms.val.rgb_static
         self.train_transforms = []
+        self.val_transforms = []
         for train_transform_cfg in train_transforms_cfg:
             self.train_transforms.append(hydra.utils.instantiate(train_transform_cfg))
+        for val_transform_cfg in val_transforms_cfg:
+            self.val_transforms.append(hydra.utils.instantiate(val_transform_cfg))
 
-        self.vis_encoder = hydra.utils.instantiate(complete_calvin_cfg.model.vision_goal)
+        if "vision_goal" in complete_calvin_cfg.model:
+            self.vis_encoder = hydra.utils.instantiate(complete_calvin_cfg.model.vision_goal)
+        else:
+            self.vis_encoder = None
 
         _file_handler = logging.FileHandler(f"{self.output_dir}/{self.timestamp}/build_dataset.log", mode='w')
         _file_handler.setLevel(logging.INFO)
@@ -76,7 +83,7 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
         return img_copy
 
 
-    def build_trajectory_representation(self, gripper_centers_world, gripper_widths):
+    def build_trajectory_representation(self, gripper_centers_world, gripper_widths, dataset_split):
         # project simplified trajectory to image spaces & draw on images
 
         traj_imgs_seq = {"rgb_static": [], "rgb_gripper": []}
@@ -95,8 +102,12 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
                 traj_imgs_seq[cam_name].append(img_with_traj)
 
                 transformed_img_with_traj = torch.tensor(img_with_traj).permute(2, 0, 1).unsqueeze(0) # HWC to CHW
-                for train_transform in self.train_transforms:
-                    transformed_img_with_traj = train_transform(transformed_img_with_traj)
+                if dataset_split == "training":
+                    for train_transform in self.train_transforms:
+                        transformed_img_with_traj = train_transform(transformed_img_with_traj)
+                elif dataset_split == "validation":
+                    for val_transform in self.val_transforms:
+                        transformed_img_with_traj = val_transform(transformed_img_with_traj)
                 transformed_traj_imgs_seq[cam_name].append(transformed_img_with_traj.cpu().numpy())
 
                 if not self.save_gif_per_seq:
@@ -152,23 +163,31 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
         auto_lang_ann = np.load(f"{self.dataset_path}/{dataset_split}/{self.AUTO_LANG_ANN_FOLDER}/auto_lang_ann.npy", allow_pickle=True).item()
         auto_vis_lang_ann = {"vision": {"ann": [], "emb": []}, "language": auto_lang_ann["language"], "info": auto_lang_ann["info"]}
         for traj_imgs_seq, transformed_traj_imgs_seq in tqdm(zip(traj_imgs_all_seqs, transformed_traj_imgs_all_seqs), total=len(transformed_traj_imgs_all_seqs), desc=f"Embedding trajectory images for {dataset_split} split"):
-            if "clip" in self.vis_encoder.__class__.__name__.lower():
+            if self.vis_encoder is None:
+                # for traj-img-as-cam
+                first_static_traj_img = traj_imgs_seq["rgb_static"][0].squeeze() # don't use rgb_gripper imgs as they don't show the traj well
+                auto_vis_lang_ann["vision"]["ann"].append(first_static_traj_img)
+                auto_vis_lang_ann["vision"]["emb"].append(np.zeros_like(auto_lang_ann["language"]["emb"][0]))
+                self.AUTO_VIS_LANG_ANN_FOLDER = self.AUTO_VIS_LANG_ANN_FOLDER.replace("<vis-encoder>", "none")
+            elif "clip" in self.vis_encoder.__class__.__name__.lower():
                 # encode un-transformed traj img as clip encoder has its own transforms
                 first_static_traj_img = traj_imgs_seq["rgb_static"][0].squeeze() # don't use rgb_gripper imgs as they don't show the traj well
                 first_static_traj_img_embedded = self.vis_encoder([torch.tensor(first_static_traj_img)])
                 auto_vis_lang_ann["vision"]["ann"].append(first_static_traj_img)
                 auto_vis_lang_ann["vision"]["emb"].append(first_static_traj_img_embedded)
+                self.AUTO_VIS_LANG_ANN_FOLDER = self.AUTO_VIS_LANG_ANN_FOLDER.replace("<vis-encoder>", self.vision_encoder.model_name)
             elif "resnet" in self.vis_encoder.__class__.__name__.lower():
                 # encode transformed traj img as film-resnet encoder doesn't have its own transforms
                 first_static_transformed_traj_img = transformed_traj_imgs_seq["rgb_static"][0] # don't use rgb_gripper imgs as they don't show the traj well
-                first_static_transformed_traj_img_embedded = self.vis_encoder(torch.tensor(first_static_transformed_traj_img), torch.zeros_like(torch.tensor(auto_lang_ann["language"]["emb"][0]))) #TODO: add corresponding lang_ann
+                first_static_transformed_traj_img_embedded = self.vis_encoder(torch.tensor(first_static_transformed_traj_img), torch.zeros_like(torch.tensor(auto_lang_ann["language"]["emb"][0]))) #TODO: add corresponding lang_ann (only used if use_image_text_not_embedding false)
                 auto_vis_lang_ann["vision"]["ann"].append(first_static_transformed_traj_img)
                 auto_vis_lang_ann["vision"]["emb"].append(first_static_transformed_traj_img_embedded)
+                self.AUTO_VIS_LANG_ANN_FOLDER = self.AUTO_VIS_LANG_ANN_FOLDER.replace("<vis-encoder>", self.vision_encoder.model_name)
             else:
                 raise NotImplementedError(f"Vision encoder {self.vis_encoder.__class__.__name__} not supported")
 
         auto_vis_lang_ann["vision"]["ann"] = np.stack(auto_vis_lang_ann["vision"]["ann"])[np.newaxis, :]
-        auto_vis_lang_ann["vision"]["emb"] = torch.stack(auto_vis_lang_ann["vision"]["emb"]).cpu().numpy()
+        auto_vis_lang_ann["vision"]["emb"] = torch.stack(auto_vis_lang_ann["vision"]["emb"]).detach().cpu().numpy()
         
         vis_lang_ann_output_dir = f"{self.output_dir}/{self.timestamp}/{self.AUTO_VIS_LANG_ANN_FOLDER}/{dataset_split}"
         os.makedirs(vis_lang_ann_output_dir, exist_ok=True)
@@ -181,7 +200,9 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
                 embeddings[task_all_seqs[i]] = {"emb": [], "vis_emb": [], "lang_emb": [], "vis_ann": [], "lang_ann": []}
 
                 # TODO: add correct embs to embeddings.npy instead of empty ones
-                """if "clip" in self.vis_encoder.__class__.__name__.lower():
+                """if self.vis_encoder is None:
+                    pass
+                elif "clip" in self.vis_encoder.__class__.__name__.lower():
                     embeddings[task_all_seqs[i]]["emb"] = np.concatenate((auto_vis_lang_ann["vision"]["emb"][i], auto_vis_lang_ann["language"]["emb"][i]), axis=-1)[np.newaxis, :]
                     embeddings[task_all_seqs[i]]["vis_emb"] = auto_vis_lang_ann["vision"]["emb"][i][np.newaxis, :]
                 elif "resnet" in self.vis_encoder.__class__.__name__.lower():

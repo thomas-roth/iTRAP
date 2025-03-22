@@ -17,8 +17,8 @@ class CalvinDatasetBuilder(ABC):
     CALVIN_GRIPPER_WIDTH_OPEN = 1.0
     CALVIN_GRIPPER_WIDTH_CLOSED = -1.0
     VIS_ENCODER_CFG_PATH = "models/MoDE_Diffusion_Policy/conf/model/mode_agent.yaml"
-    AUTO_LANG_ANN_FOLDER = "lang_clip_resnet50"
-    AUTO_VIS_LANG_ANN_FOLDER = "vis_lang_clip_vit-b16_resnet50"
+    AUTO_LANG_ANN_FOLDER = "lang_clip_ViTB32" # TODO: make dynamic depending on if clip or film-resnet used
+    AUTO_VIS_LANG_ANN_FOLDER = "vis_<vis-encoder>_lang_clip_ViTB32"
 
 
     def __init__(self, dataset_path, traj_simplification_rdp_epsilon=0.01):
@@ -42,7 +42,7 @@ class CalvinDatasetBuilder(ABC):
 
 
     @abstractmethod
-    def build_trajectory_representation(self, gripper_centers_world, gripper_widths):
+    def build_trajectory_representation(self, gripper_centers_world, gripper_widths, dataset_split):
         pass
 
 
@@ -109,7 +109,7 @@ class CalvinDatasetBuilder(ABC):
             lengths_simplified_trajs.append(len(simplified_gripper_centers_world))
 
             # build trajectory representation (trajectory images or trajectory string & start images)
-            traj_representations = self.build_trajectory_representation(simplified_gripper_centers_world, simplified_gripper_widths)
+            traj_representations = self.build_trajectory_representation(simplified_gripper_centers_world, simplified_gripper_widths, dataset_split)
             if traj_representations.keys() == {"traj_imgs_seq", "transformed_traj_imgs_seq"}:
                 traj_imgs_all_seqs.append(traj_representations["traj_imgs_seq"])
                 transformed_traj_imgs_all_seqs.append(traj_representations["transformed_traj_imgs_seq"])

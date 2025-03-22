@@ -21,7 +21,7 @@ This repository contains the code and benchmarks for my Bachelor's thesis titled
  ┃ ┃ ┃ ┣ 📂LIBERO               # LIBERO benchmark for simulation & real-world tests (not used)
  ┃ ┃ ┃ ┣ 📂calvin_env           # CALVIN simulation environment
  ┃ ┃ ┃ ┣ 📂conf                 # Config files for training & evaluation on CALVIN & LIBERO
- ┃ ┃ ┃ ┣ 📂dataset              # Policy dataset (non-existent at first)
+ ┃ ┃ ┃ ┣ 📂datasets             # Policy datasets (non-existent at first)
  ┃ ┃ ┃ ┣ 📂mode                 # Model, data modules & training & evaluation scripts
  ┃ ┃ ┃ ┃ ┣ 📂callbacks          # EMA Callback for training & evaluation
  ┃ ┃ ┃ ┃ ┣ 📂datasets           # Data modules for CALVIN & LIBERO
