@@ -90,7 +90,12 @@ To train the policy on CALVIN, follow the steps below:
     mv config.yaml .hydra/config.yaml
     ```
 3. Adjust the training parameters in the config files ([main config](iTRAP/models/MoDE_Diffusion_Policy/conf/config_calvin.yaml), [checkpoint path, optimizer & lr scheduler](iTRAP/models/MoDE_Diffusion_Policy/conf/model/mode_agent.yaml), [rollout config](iTRAP/models/MoDE_Diffusion_Policy/conf/callbacks/rollout_lh/calvin.yaml)).
-4. Start the training:
+4. Start the VLM server in a separate terminal (required during rollout):
+    ```bash
+    conda activate itrap
+    sh iTRAP/models/Qwen2-VL/start_vlm_server.sh
+    ```
+5. Start the training:
     ```bash
     python iTRAP/models/MoDE_Diffusion_Policy/mode/training_calvin.py
     ```

@@ -16,9 +16,8 @@ class CalvinDatasetBuilder(ABC):
     # don't touch
     CALVIN_GRIPPER_WIDTH_OPEN = 1.0
     CALVIN_GRIPPER_WIDTH_CLOSED = -1.0
-    VIS_ENCODER_CFG_PATH = "models/MoDE_Diffusion_Policy/conf/model/mode_agent.yaml"
-    AUTO_LANG_ANN_FOLDER = "lang_clip_ViTB32" # TODO: make dynamic depending on if clip or film-resnet used
-    AUTO_VIS_LANG_ANN_FOLDER = "vis_<vis-encoder>_lang_clip_ViTB32"
+    AUTO_LANG_ANN_FOLDER = "lang_clip_ViTB32"
+    AUTO_VIS_LANG_ANN_FOLDER = "vis_<vis-encoder>_lang_CLIP_ViTB32"
 
 
     def __init__(self, dataset_path, traj_simplification_rdp_epsilon=0.01):
@@ -42,7 +41,7 @@ class CalvinDatasetBuilder(ABC):
 
 
     @abstractmethod
-    def build_trajectory_representation(self, gripper_centers_world, gripper_widths, dataset_split):
+    def build_trajectory_representation(self, gripper_centers_world, gripper_widths):
         pass
 
 
@@ -86,16 +85,17 @@ class CalvinDatasetBuilder(ABC):
         lengths_simplified_trajs = []
 
         task_all_seqs = []
+        task_text_all_seqs = []
         traj_strings_all_seqs = []
         start_imgs_all_seqs = []
         traj_imgs_all_seqs = []
-        transformed_traj_imgs_all_seqs = []
         for i, seq in tqdm(enumerate(self.dataloader), total=len(self.dataloader), desc=f"Building trajectories for {dataset_split} split"):
             assert len(seq["obs"]["robot_obs"]) == len(seq["obs"]["rel_actions"]) == len(seq["obs"]["rgb_static"]) == len(seq["obs"]["rgb_gripper"])
 
             self.curr_seq = seq # not pretty but required for build_trajectory_representation()
 
             task_all_seqs.append(self.curr_seq["anno"])
+            task_text_all_seqs.append(self.curr_seq["anno_text"])
 
             # reset env to start of sequence
             self.env.reset(robot_obs=self.curr_seq["obs"]["robot_obs"][0], scene_obs=self.curr_seq["obs"]["scene_obs"][0])
@@ -109,14 +109,13 @@ class CalvinDatasetBuilder(ABC):
             lengths_simplified_trajs.append(len(simplified_gripper_centers_world))
 
             # build trajectory representation (trajectory images or trajectory string & start images)
-            traj_representations = self.build_trajectory_representation(simplified_gripper_centers_world, simplified_gripper_widths, dataset_split)
-            if traj_representations.keys() == {"traj_imgs_seq", "transformed_traj_imgs_seq"}:
+            traj_representations = self.build_trajectory_representation(simplified_gripper_centers_world, simplified_gripper_widths)
+            if traj_representations.keys() == {"traj_imgs_seq"}:
                 traj_imgs_all_seqs.append(traj_representations["traj_imgs_seq"])
-                transformed_traj_imgs_all_seqs.append(traj_representations["transformed_traj_imgs_seq"])
             elif traj_representations.keys() == {"traj_string_seq", "start_imgs_seq"}:
                 traj_strings_all_seqs.append(traj_representations["traj_string_seq"])
                 start_imgs_all_seqs.append(traj_representations["start_imgs_seq"])
 
-        self._logger.info(f"Built {i+1} trajectories for {dataset_split} split, average trajectory length: {np.mean(lengths_simplified_trajs)}")
+        self._logger.info(f"Built {i+1} trajectories for {dataset_split} split, average trajectory length: {round(np.mean(lengths_simplified_trajs), 2)}")
 
-        return task_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, traj_imgs_all_seqs, transformed_traj_imgs_all_seqs
+        return task_all_seqs, task_text_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, traj_imgs_all_seqs

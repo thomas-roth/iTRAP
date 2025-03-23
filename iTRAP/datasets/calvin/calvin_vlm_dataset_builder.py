@@ -28,7 +28,7 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         self._logger.info("Initialized CalvinVLMDatasetBuilder")
 
 
-    def build_trajectory_representation(self, gripper_centers_world, gripper_widths, dataset_split):
+    def build_trajectory_representation(self, gripper_centers_world, gripper_widths):
         # project simplified trajectory to static image space & generate trajectory string
 
         gripper_centers = self._project_gripper_centers_to_cam(gripper_centers_world, cam_id=0)
@@ -61,8 +61,10 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         return {"traj_string_seq": traj_string_seq, "start_imgs_seq": start_imgs_seq}
 
 
-    def _save_trajectory_strings(self, task_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, dataset_split):
-        assert len(task_all_seqs) == len(traj_strings_all_seqs) == len(start_imgs_all_seqs)
+    def _save_trajectory_strings(self, task_all_seqs, task_text_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, dataset_split):
+        assert len(task_all_seqs) == len(task_text_all_seqs), f"len(task_all_seqs) ({len(task_all_seqs)}) != len(task_text_all_seqs) ({len(task_text_all_seqs)})"
+        assert len(task_all_seqs) == len(traj_strings_all_seqs), f"len(task_all_seqs) ({len(task_all_seqs)}) != len(traj_strings_all_seqs) ({len(traj_strings_all_seqs)})"
+        assert len(task_all_seqs) == len(start_imgs_all_seqs), f"len(task_all_seqs) ({len(task_all_seqs)}) != len(start_imgs_all_seqs) ({len(start_imgs_all_seqs)})"
 
         num_digits = len(str(len(task_all_seqs)))
 
@@ -70,18 +72,15 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         os.makedirs(dataset_path, exist_ok=True)
 
         dataset_entries = []
-        for i, (task_seq, traj_string_seq, start_imgs_seq) in tqdm(enumerate(zip(task_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs)),
-                                                                   total=len(task_all_seqs), desc=f"Building question-answer pairs for {dataset_split} split"):
-            first_static_img = Image.fromarray(start_imgs_seq["rgb_static"]) # TODO?: use transformed image instead of original (if yes move transforms from policy dataset builder to dataset builder)
+        for i, (task_seq, task_text_seq, traj_string_seq, start_imgs_seq) in tqdm(enumerate(zip(task_all_seqs, task_text_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs)),
+                                                                                  total=len(task_all_seqs), desc=f"Building question-answer pairs for {dataset_split} split"):
+            first_static_img = Image.fromarray(start_imgs_seq["rgb_static"]) # don't use gripper image as only tiny part of trajectory visible
             first_static_img_name = f"{i:0{num_digits}d}_{task_seq}_static.png"
             first_static_img.save(f"{dataset_path}/{first_static_img_name}")
 
-            # don't use gripper image as only tiny part of trajectory visible
-
-            # FIXME?: use long version of task instruction for prompt (["language"]["ann"] instead of ["language"]["task"])
             dataset_entry = {
                 "messages": [{
-                    "content": f"<image>In the image, please execute the command described in <prompt>{str.replace(task_seq, '_', ' ')}</prompt>. " \
+                    "content": f"<image>In the image, please execute the command described in <prompt>{task_text_seq}</prompt>. " \
                                 "Provide a sequence of points denoting the trajectory of a robot gripper to achieve the goal. " \
                                 "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(0.252, 0.328), (0.327, 0.174), " \
                                 "(0.139, 0.242), <action>Open Gripper</action>, (0.746, 0.218), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
@@ -126,9 +125,9 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
 
     def build_dataset(self):
         for dataset_split in ["training", "validation"]:
-            task_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, _, _ = self._build_trajectories(dataset_split)
+            task_all_seqs, task_text_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, _ = self._build_trajectories(dataset_split)
 
-            self._save_trajectory_strings(task_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, dataset_split)
+            self._save_trajectory_strings(task_all_seqs, task_text_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, dataset_split)
         
         self._logger.info("Finished building VLM dataset")
 
