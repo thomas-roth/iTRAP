@@ -101,8 +101,7 @@ To train the policy on CALVIN, follow the steps below:
     ```
 
 ### Evaluation
-To evaluate the model, two terminal sessions need to be started.
-Start the VLM server in the first terminal:
+To evaluate the model, two terminal sessions need to be started. Start the VLM server in the first terminal:
 ```bash
 conda activate itrap
 sh iTRAP/models/Qwen2-VL/start_vlm_server.sh
