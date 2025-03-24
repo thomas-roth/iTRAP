@@ -8,6 +8,7 @@ import sys
 from collections import Counter
 import cv2
 import hydra
+import numpy as np
 from omegaconf import DictConfig
 from openai import OpenAI
 from pytorch_lightning import seed_everything
@@ -18,7 +19,7 @@ from PIL import Image
 
 sys.path.append(str(Path(__file__).absolute().parents[2]))
 sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "MoDE_Diffusion_Policy"))
-from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.utils import get_default_mode_and_env, get_env_state_for_initial_condition
+from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.utils import LangEmbeddings, get_default_mode_and_env, get_env_state_for_initial_condition
 from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.multistep_sequences import get_sequences
 from iTRAP.models.MoDE_Diffusion_Policy.mode.rollout.rollout_video import RolloutVideo
 
@@ -28,54 +29,189 @@ MODEL_PATH = "path/to/model"
 
 
 
-def _get_log_dir(cfg_log_dir):
-    log_dir = Path(cfg_log_dir)
-    latest_run_day = sorted(log_dir.iterdir(), key=os.path.getmtime)[-1]
-    latest_run_time = sorted(latest_run_day.iterdir(), key=os.path.getmtime)[-1]
-    return latest_run_time
+class ItrapEvaluator:
+    def __init__(self):
+        os.environ["PL_TORCH_DISTRIBUTED_BACKEND"] = "gloo"
+        os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+
+        with hydra.initialize(config_path="../models/MoDE_Diffusion_Policy/conf"):
+            self.mode_eval_cfg = hydra.compose(config_name="mode_evaluate")
+            complete_calvin_cfg = hydra.compose(config_name="config_calvin")
+        
+        self.device = self.mode_eval_cfg.device
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(self.device)
+        if self.device != "cpu":
+            self.device = torch.device(f"cuda:{self.mode_eval_cfg.device}")
+
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.INFO)
+
+        self.record = True
+        if self.record:
+            self.rollout_video = RolloutVideo(
+                logger=self.logger,
+                empty_cache=False,
+                log_to_file=True,
+                save_dir=Path(self._get_log_dir()) / "rollout_videos",
+                resolution_scale=1,
+            )
+
+        self.vlm_client = setup_vlm_client()
+
+        self.setup_policy()
+        
+        val_transforms_cfg = complete_calvin_cfg.datamodule.transforms.val.rgb_static
+        self.val_transforms = []
+        for val_transform_cfg in val_transforms_cfg:
+            self.val_transforms.append(hydra.utils.instantiate(val_transform_cfg))
+        
+        self.task_oracle = hydra.utils.instantiate(self.mode_eval_cfg.tasks)
 
 
-def setup_vlm_client():
-    client = OpenAI(api_key="0", base_url="http://localhost:8000/v1")
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    return client
+    def _get_log_dir(self):
+        log_dir = Path(self.mode_eval_cfg.log_dir)
+        latest_run_day = sorted(log_dir.iterdir(), key=os.path.getmtime)[-1]
+        latest_run_time = sorted(latest_run_day.iterdir(), key=os.path.getmtime)[-1]
+        return latest_run_time
 
 
-def setup_policy(cfg):
-    seed_everything(0, workers=True)
+    def setup_policy(self):
+        seed_everything(0, workers=True)
 
-    model, env, _, _ = get_default_mode_and_env(
-        cfg.train_folder,
-        cfg.dataset_path,
-        cfg.checkpoint,
-        eval_cfg_overwrite=cfg.eval_cfg_overwrite,
-        device_id=cfg.device,
-    )
+        sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "MoDE_Diffusion_Policy" / "calvin_env"))
+        self.policy, self.env, _, self.lang_embeddings = get_default_mode_and_env(
+            self.mode_eval_cfg.train_folder,
+            self.mode_eval_cfg.dataset_path,
+            self.mode_eval_cfg.checkpoint,
+            eval_cfg_overwrite=self.mode_eval_cfg.eval_cfg_overwrite,
+            device_id=self.mode_eval_cfg.device,
+        )
 
-    model = model.to(cfg.device)
+        self.policy = self.policy.to(self.device)
 
-    if cfg.num_sampling_steps is not None:
-        model.num_sampling_steps = cfg.num_sampling_steps
-    if cfg.sampler_type is not None:
-        model.sampler_type = cfg.sampler_type
-    if cfg.multistep is not None:
-        model.multistep = cfg.multistep
-    if cfg.sigma_min is not None:
-        model.sigma_min = cfg.sigma_min
-    if cfg.sigma_max is not None:
-        model.sigma_max = cfg.sigma_max
-    if cfg.noise_scheduler is not None:
-        model.noise_scheduler = cfg.noise_scheduler
+        if self.mode_eval_cfg.num_sampling_steps is not None:
+            self.policy.num_sampling_steps = self.mode_eval_cfg.num_sampling_steps
+        if self.mode_eval_cfg.sampler_type is not None:
+            self.policy.sampler_type = self.mode_eval_cfg.sampler_type
+        if self.mode_eval_cfg.multistep is not None:
+            self.policy.multistep = self.mode_eval_cfg.multistep
+        if self.mode_eval_cfg.sigma_min is not None:
+            self.policy.sigma_min = self.mode_eval_cfg.sigma_min
+        if self.mode_eval_cfg.sigma_max is not None:
+            self.policy.sigma_max = self.mode_eval_cfg.sigma_max
+        if self.mode_eval_cfg.noise_scheduler is not None:
+            self.policy.noise_scheduler = self.mode_eval_cfg.noise_scheduler
 
-    model.eval()
+        self.policy.eval()
 
-    global_step = int(cfg.checkpoint.split('=')[-1].split('_')[0]) * 1000 # 1000 steps per epoch
+        self.policy_global_step = int(self.mode_eval_cfg.checkpoint.split('=')[-1].split('_')[0]) * 1000 # 1000 steps per epoch
+    
+    
+    def evaluate_itrap(self):
+        eval_sequences = get_sequences(num_sequences=self.mode_eval_cfg.num_sequences)
 
-    return model, env, global_step
+        results = []
+        for seq_nr, (initial_state, eval_sequence) in tqdm(enumerate(eval_sequences), desc="Evaluating policy"):
+            success_counter = self.evaluate_sequence(seq_nr, initial_state, eval_sequence)
+            results.append(success_counter)
+
+            if self.record:
+                # FIXME: add goal image as video thumbnail
+                #normalized_goal_img = goal["vis_image"] / 127.5 - 1 # normalize to [-1, 1]
+                #rollout_video.add_goal_thumbnail(normalized_goal_img.permute(2, 0, 1)) # shape: C, H, W
+
+                self.rollout_video.log(self.policy_global_step)
+        
+        self.log_success_rate(results)
+    
+
+    def evaluate_sequence(self, seq_nr, initial_state, eval_sequence):
+        robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
+        self.env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
+
+        if self.record:
+            self.rollout_video.new_video(tag=f"lh-eval_seq-nr-{seq_nr:04d}", caption=" | ".join(eval_sequence))
+
+        success_counter = Counter()
+        for subtask in eval_sequence:
+            if self.record:
+                self.rollout_video.new_subtask()
+            
+            success = self.rollout_subtask(subtask)
+
+            if self.record:
+                self.rollout_video.draw_outcome(success)
+
+            if success:
+                success_counter[subtask] += 1
+            else:
+                return success_counter
+        
+        return success_counter
+    
+
+    def rollout_subtask(self, subtask):
+        obs = self.env.get_obs()
+
+        goal = self.lang_embeddings.get_lang_goal(subtask)
+
+        self.policy.reset()
+        start_info = self.env.get_info()
+
+        success = False
+        for step in tqdm(range(self.mode_eval_cfg.ep_len), desc=f"Rolling out policy for task {subtask}", leave=False):
+            if step % self.policy.multistep == 0:
+                static_img_start = self.env.cameras[0].render()[0].squeeze()
+                response = query_vlm(static_img_start, self.vlm_client, subtask)
+                static_traj_img = build_trajectory_image(static_img_start, response, save_traj_imgs=False)
+
+                transformed_static_traj_img = static_traj_img.permute(2, 0, 1).unsqueeze(0)
+                for transform in self.val_transforms:
+                    transformed_static_traj_img = transform(transformed_static_traj_img)
+
+            action = self.policy.step(rgb_static=transformed_static_traj_img.to(self.device), rgb_gripper=obs["rgb_obs"]["rgb_gripper"].to(self.device), goal=goal)
+            obs, _, _, current_info = self.env.step(action)
+
+            if self.record:
+                normalized_rgb_static = obs["rgb_obs"]["rgb_static"] / 127.5 - 1 # normalize to [-1, 1] # TODO: check if neccesary
+                self.rollout_video.update(normalized_rgb_static) # shape: B, F, C, H, W
+
+            # check if current steps solves task
+            current_task_info = self.task_oracle.get_task_info_for_set(start_info, current_info, {subtask})
+            if len(current_task_info) > 0:
+                success = True
+                break
+        
+        if self.record:
+            self.rollout_video.add_language_instruction(goal["lang_text"])
+        
+        return success
+    
+
+    def log_success_rate(self, results):
+        results_counter = Counter(results)
+        for subtask_nr in range(1, 6):
+            num_success = sum(results_counter[j] for j in reversed(range(subtask_nr, 6)))
+            success_rate = num_success / len(results)
+            self.logger.log(f"{subtask_nr} / 5 subtasks: {num_success} / {len(results)} sequences, SR: {success_rate * 100:.1f}%")
+        
+        avg_seq_len = np.mean(results)
+        self.logger.log(f"Average successful sequence length: {avg_seq_len:.1f}")
 
 
-def generate_tasks(num_tasks) -> list:
-    sequences = get_sequences(num_sequences=num_tasks)
+def log_success_rate(logger, total_task_counter, success_counter):
+    max_task_len = max([len(task) for task in total_task_counter])
+
+    logger.info("Evaluation results:")
+    for task in total_task_counter:
+        logger.info(f"{task:<{max_task_len}}: {success_counter[task]} / {total_task_counter[task]} | SR: {success_counter[task] / total_task_counter[task] * 100:.2f} %")
+    logger.info(f"Total SR: {sum(success_counter.values()) / sum(total_task_counter.values()) * 100:.2f}%")
+
+
+
+"""
+def generate_seqs(num_sequences) -> list:
+    sequences = get_sequences(num_sequences=num_sequences)
 
     # turn sequences into tasks => only keep first task
     tasks = []
@@ -84,6 +220,13 @@ def generate_tasks(num_tasks) -> list:
         tasks.append(task)
 
     return tasks
+"""
+
+
+def setup_vlm_client():
+    client = OpenAI(api_key="0", base_url="http://localhost:8000/v1")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    return client
 
 
 def build_prompt(task_desc: str) -> list:
@@ -93,6 +236,36 @@ def build_prompt(task_desc: str) -> list:
             "(0.139, 0.242), <action>Open Gripper</action>, (0.746, 0.218), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
             "an x and y location of the end effector of the gripper in the image. The action tags indicate the gripper action. " \
             "The coordinates should be floats ranging between 0 and 1, indicating the relative location of the points in the image."
+
+
+def query_vlm(static_img_start, vlm_client, task):
+    # get base64 encoded image of first frame of static camera
+    img_bytes = io.BytesIO()
+    Image.fromarray(static_img_start).save(img_bytes, format="PNG")
+    base64_img = base64.b64encode(img_bytes.getvalue()).decode("utf-8")
+
+    # query VLM for trajectory
+    prompt = build_prompt(task)
+
+    response = vlm_client.chat.completions.create(
+        model="qwen2-vl",
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": prompt
+                },{
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{base64_img}"
+                    }
+                }
+            ]
+        }]
+    )
+
+    return response.choices[0].message.content
 
 
 def extract_gripper_points(response):
@@ -180,36 +353,6 @@ def draw_trajectory(img, gripper_points, gripper_actions, traj_color="red"):
     return img_copy
 
 
-def query_vlm(static_img_start, vlm_client, task):
-    # get base64 encoded image of first frame of static camera
-    img_bytes = io.BytesIO()
-    Image.fromarray(static_img_start).save(img_bytes, format="PNG")
-    base64_img = base64.b64encode(img_bytes.getvalue()).decode("utf-8")
-
-    # query VLM for trajectory
-    prompt = build_prompt(task)
-
-    response = vlm_client.chat.completions.create(
-        model="qwen2-vl",
-        messages=[{
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": prompt
-                },{
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/png;base64,{base64_img}"
-                    }
-                }
-            ]
-        }]
-    )
-
-    return response.choices[0].message.content
-
-
 def build_trajectory_image(static_img_start, vlm_response, save_traj_imgs, task_nr=-1, task=""):
     gripper_points, gripper_actions = extract_gripper_points(vlm_response)
     static_traj_img = draw_trajectory(static_img_start, gripper_points, gripper_actions)
@@ -223,99 +366,6 @@ def build_trajectory_image(static_img_start, vlm_response, save_traj_imgs, task_
     return torch.tensor(static_traj_img)
 
 
-def rollout_policy(policy_cfg, env, vlm_client, policy, task_nr, task, task_oracle, rollout_video, policy_global_step):
-    obs = env.get_obs()
-    goal = {"lang_text": task}
-
-    policy.reset()
-    start_info = env.get_info()
-
-    rollout_video.new_video(tag=f"{task_nr:04d}_{task}", caption=task)
-
-    success = False
-    for step in tqdm(range(policy_cfg.ep_len), desc=f"Rolling out policy for task {task}", leave=False):
-        static_img_start = env.cameras[0].render()[0].squeeze()
-        response = query_vlm(static_img_start, vlm_client, task)
-        static_traj_img = build_trajectory_image(static_img_start, response, save_traj_imgs, task_nr, task)
-
-        action = policy.step(rgb_static=static_traj_img, rgb_gripper=obs["rgb_obs"]["rgb_gripper"], goal=goal)
-        obs, _, _, current_info = env.step(action)
-
-        normalized_rgb_static = obs["rgb_obs"]["rgb_static"] / 127.5 - 1 # normalize to [-1, 1]
-        rollout_video.update(normalized_rgb_static) # shape: B, F, C, H, W
-
-        # check if current steps solves task
-        current_task_info = task_oracle.get_task_info_for_set(start_info, current_info, {task})
-        if len(current_task_info) > 0:
-            success = True
-            break
-    
-    rollout_video.draw_outcome(success)
-    rollout_video.add_language_instruction(task)
-
-    # FIXME: add goal image as video thumbnail
-    #normalized_goal_img = goal["vis_image"] / 127.5 - 1 # normalize to [-1, 1]
-    #rollout_video.add_goal_thumbnail(normalized_goal_img.permute(2, 0, 1)) # shape: C, H, W
-
-    rollout_video.log(policy_global_step)
-
-    return success
-
-
-def log_success_rate(logger, total_task_counter, success_counter):
-    max_task_len = max([len(task) for task in total_task_counter])
-
-    logger.info("Evaluation results:")
-    for task in total_task_counter:
-        logger.info(f"{task:<{max_task_len}}: {success_counter[task]} / {total_task_counter[task]} | SR: {success_counter[task] / total_task_counter[task] * 100:.2f} %")
-    logger.info(f"Total SR: {sum(success_counter.values()) / sum(total_task_counter.values()) * 100:.2f}%")
-
-
-@hydra.main(config_path="../models/MoDE_Diffusion_Policy/conf", config_name="mode_evaluate")
-def main(policy_cfg: DictConfig) -> None:
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-
-    # make sure VLM runs on GPU 0
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-    vlm_client = setup_vlm_client()
-
-    # make sure policy runs on GPUs 1, 2 & 3
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3"
-    policy, env, policy_global_step = setup_policy(policy_cfg)
-
-    logger = logging.getLogger(__name__)
-    log_dir = _get_log_dir(policy_cfg.log_dir)
-
-    rollout_video = RolloutVideo(
-            logger=logger,
-            empty_cache=False,
-            log_to_file=True,
-            save_dir=Path(log_dir) / "rollout_videos",
-            resolution_scale=1,
-        )
-
-    tasks = generate_tasks(policy_cfg.num_sequences)
-    task_oracle = hydra.utils.instantiate(policy_cfg.tasks)
-
-    success_counter = Counter()
-    failure_counter = Counter()
-    for task_nr, (initial_state, task) in tqdm(enumerate(tasks), total=len(tasks), desc="Evaluating model"):
-        # reset env
-        robot_obs, scene_obs = get_env_state_for_initial_condition(initial_state)
-        env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
-
-        success = rollout_policy(policy_cfg, env, vlm_client, policy, task_nr, task, task_oracle, rollout_video, policy_global_step)
-        if success:
-            success_counter[task] += 1
-        else:
-            failure_counter[task] += 1
-    
-    total_task_counter = success_counter + failure_counter
-    log_success_rate(logger, total_task_counter, success_counter)
-
-
 if __name__ == "__main__":
-    sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "MoDE_Diffusion_Policy" / "calvin_env"))
-
-    save_traj_imgs = True
-    main()
+    itrap_evaluator = ItrapEvaluator()
+    itrap_evaluator.evaluate_itrap()
