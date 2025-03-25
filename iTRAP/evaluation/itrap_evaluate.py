@@ -150,7 +150,7 @@ class ItrapEvaluator:
         goal = self.lang_embeddings.get_lang_goal(subtask)
 
         static_img_start = self.env.cameras[0].render()[0]
-        response = query_vlm(static_img_start, self.vlm_client, task_text=goal["lang_text"])
+        response = query_vlm(static_img_start, self.vlm_client, subtask)
         static_traj_img = build_trajectory_image(static_img_start, response, save_traj_imgs=False, task_nr=step, task=subtask, output_dir=self.output_dir)
 
         transformed_static_traj_img = torch.tensor(static_traj_img).permute(2, 0, 1).unsqueeze(0).to(self.device)

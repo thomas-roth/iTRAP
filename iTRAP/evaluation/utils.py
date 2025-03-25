@@ -16,14 +16,14 @@ def setup_vlm_client():
     return client
 
 
-def query_vlm(static_img_start, vlm_client, task_text):
+def query_vlm(static_img_start, vlm_client, task):
     # get base64 encoded image of first frame of static camera
     img_bytes = io.BytesIO()
     Image.fromarray(static_img_start).save(img_bytes, format="PNG")
     base64_img = base64.b64encode(img_bytes.getvalue()).decode("utf-8")
 
     # build prompt text
-    prompt = f"<image.png>In the image, please execute the command described in <prompt>{task_text}</prompt>. " \
+    prompt = f"<image.png>In the image, please execute the command described in <prompt>{task.replace('_', ' ')}</prompt>. " \
             "Provide a sequence of points denoting the trajectory of a robot gripper to achieve the goal. " \
             "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(0.252, 0.328), (0.327, 0.174), " \
             "(0.139, 0.242), <action>Open Gripper</action>, (0.746, 0.218), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
