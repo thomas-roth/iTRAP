@@ -160,14 +160,15 @@ class ItrapEvaluator:
         for step in tqdm(range(self.mode_eval_cfg.ep_len), desc=f"Rolling out policy for task {subtask}", leave=False):
             if step % self.policy.multistep == 0:
                 static_img_start = self.env.cameras[0].render()[0]
-                response = query_vlm(static_img_start, self.vlm_client, task_text=goal["lang_text"])
+                response = query_vlm(static_img_start, self.vlm_client, subtask)
                 static_traj_img = build_trajectory_image(static_img_start, response, save_traj_imgs=False, task_nr=step, task=subtask, output_dir=self.output_dir)
 
                 transformed_static_traj_img = torch.tensor(static_traj_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
                 for transform in self.val_transforms:
                     transformed_static_traj_img = transform(transformed_static_traj_img)
+                obs["rgb_obs"]["rgb_static"] = transformed_static_traj_img.unsqueeze(0)
 
-            action = self.policy.step(rgb_static=transformed_static_traj_img, rgb_gripper=obs["rgb_obs"]["rgb_gripper"].to(self.device), goal=goal)
+            action = self.policy.step(obs, goal)
             obs, _, _, current_info = self.env.step(action)
 
             if self.record:
