@@ -23,6 +23,7 @@ class CalvinDataLoader(Dataset):
     def get_single_seq(self, seq_index):
         anno_seq_start_index, anno_seq_stop_index = self.annotations["info"]["indx"][seq_index]
         anno_seq = self.annotations["language"]["task"][seq_index]
+        anno_text_seq = self.annotations["language"]["ann"][seq_index]
 
         obs_seq = []
         for index in range(anno_seq_start_index, anno_seq_stop_index):
@@ -35,4 +36,4 @@ class CalvinDataLoader(Dataset):
         
         obs_seq = {key: [dic[key] for dic in obs_seq] for key in obs_seq[0]}
 
-        return {"obs": obs_seq, "anno": anno_seq}
+        return {"obs": obs_seq, "anno": anno_seq, "anno_text": anno_text_seq}

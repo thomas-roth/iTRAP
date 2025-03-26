@@ -1,3 +1,4 @@
+import os
 import sys
 import logging
 import hydra
@@ -15,13 +16,14 @@ class CalvinDatasetBuilder(ABC):
     # don't touch
     CALVIN_GRIPPER_WIDTH_OPEN = 1.0
     CALVIN_GRIPPER_WIDTH_CLOSED = -1.0
-    CLIP_VIS_CFG_PATH = "models/MoDE_Diffusion_Policy/conf/model/mode_agent.yaml"
-    AUTO_LANG_ANN_FOLDER = "lang_clip_resnet50"
-    AUTO_VIS_LANG_ANN_FOLDER = "vis_lang_clip_vit-b16_resnet50"
+    AUTO_LANG_ANN_FOLDER = "lang_clip_ViTB32"
+    AUTO_VIS_LANG_ANN_FOLDER = "vis_<vis-encoder>_lang_CLIP_ViTB32"
 
 
-    def __init__(self, dataset_path="/DATA/calvin/task_D_D", traj_simplification_rdp_epsilon=0.01):
+    def __init__(self, dataset_path, traj_simplification_rdp_epsilon=0.01):
         self.dataset_path = dataset_path
+        os.makedirs(dataset_path, exist_ok=True)
+
         self.traj_simplification_rdp_epsilon = traj_simplification_rdp_epsilon # unit of world coordinates (meters?) => 0.01 = 1 cm?, 0.01 ≈ 6.8 points per trajectory
                                                                                # TODO: figure out world coords unit
 
@@ -83,6 +85,7 @@ class CalvinDatasetBuilder(ABC):
         lengths_simplified_trajs = []
 
         task_all_seqs = []
+        task_text_all_seqs = []
         traj_strings_all_seqs = []
         start_imgs_all_seqs = []
         traj_imgs_all_seqs = []
@@ -92,6 +95,7 @@ class CalvinDatasetBuilder(ABC):
             self.curr_seq = seq # not pretty but required for build_trajectory_representation()
 
             task_all_seqs.append(self.curr_seq["anno"])
+            task_text_all_seqs.append(self.curr_seq["anno_text"])
 
             # reset env to start of sequence
             self.env.reset(robot_obs=self.curr_seq["obs"]["robot_obs"][0], scene_obs=self.curr_seq["obs"]["scene_obs"][0])
@@ -112,6 +116,6 @@ class CalvinDatasetBuilder(ABC):
                 traj_strings_all_seqs.append(traj_representations["traj_string_seq"])
                 start_imgs_all_seqs.append(traj_representations["start_imgs_seq"])
 
-        self._logger.info(f"Built {i+1} trajectories for {dataset_split} split, average trajectory length: {np.mean(lengths_simplified_trajs)}")
+        self._logger.info(f"Built {i+1} trajectories for {dataset_split} split, average trajectory length: {round(np.mean(lengths_simplified_trajs), 2)}")
 
-        return task_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, traj_imgs_all_seqs
+        return task_all_seqs, task_text_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, traj_imgs_all_seqs

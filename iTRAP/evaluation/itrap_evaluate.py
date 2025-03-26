@@ -13,13 +13,9 @@ from tqdm import tqdm
 sys.path.append(str(Path(__file__).absolute().parents[2]))
 sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "MoDE_Diffusion_Policy"))
 from iTRAP.evaluation.utils import build_trajectory_image, query_vlm, setup_vlm_client
-from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.utils import LangEmbeddings, get_default_mode_and_env, get_env_state_for_initial_condition
+from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.utils import get_default_mode_and_env, get_env_state_for_initial_condition
 from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.multistep_sequences import get_sequences
 from iTRAP.models.MoDE_Diffusion_Policy.mode.rollout.rollout_video import RolloutVideo
-
-
-
-MODEL_PATH = "path/to/model"
 
 
 
@@ -166,6 +162,7 @@ class ItrapEvaluator:
                 transformed_static_traj_img = torch.tensor(static_traj_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
                 for transform in self.val_transforms:
                     transformed_static_traj_img = transform(transformed_static_traj_img)
+                
                 obs["rgb_obs"]["rgb_static"] = transformed_static_traj_img.unsqueeze(0)
 
             action = self.policy.step(obs, goal)
@@ -201,7 +198,7 @@ class ItrapEvaluator:
 
 if __name__ == "__main__":
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
     itrap_evaluator = ItrapEvaluator()
     itrap_evaluator.evaluate_itrap()
