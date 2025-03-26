@@ -157,7 +157,8 @@ class ItrapEvaluator:
             if step % self.policy.multistep == 0:
                 static_img_start = self.env.cameras[0].render()[0]
                 response = query_vlm(static_img_start, self.vlm_client, subtask)
-                static_traj_img = build_trajectory_image(static_img_start, response, save_traj_imgs=False, task_nr=step, task=subtask, output_dir=self.output_dir)
+                static_traj_img = build_trajectory_image(static_img_start, response, save_traj_imgs=False, task_nr=step, task=subtask,
+                                                         thickness=5, output_dir=self.output_dir)
 
                 transformed_static_traj_img = torch.tensor(static_traj_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
                 for transform in self.val_transforms:

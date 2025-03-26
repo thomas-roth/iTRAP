@@ -103,7 +103,7 @@ def extract_gripper_points(response):
     return gripper_points, points_before_gripper_actions
 
 
-def draw_trajectory(img, gripper_points, gripper_actions, traj_color="red"):
+def draw_trajectory(img, gripper_points, gripper_actions, thickness=2, traj_color="red"):
     if gripper_points == []:
         # gripper_actions is then empty as well, error msg already printed in extract_gripper_points
         return img
@@ -124,22 +124,23 @@ def draw_trajectory(img, gripper_points, gripper_actions, traj_color="red"):
         else:
             color = (0, 0, round((i+1) / len(scaled_gripper_points) * 255)) # black to blue over time
         
-        cv2.line(img_copy, scaled_gripper_points[i], scaled_gripper_points[i+1], color, thickness=2)
+        cv2.line(img_copy, scaled_gripper_points[i], scaled_gripper_points[i+1], color, thickness)
     
     for point, action in scaled_gripper_actions:
+        circle_outer_radius = 2 * thickness
         if action == "Close Gripper":
             # green circle
-            cv2.circle(img_copy, point, radius=5, color=(0, 255, 0), thickness=2)
+            cv2.circle(img_copy, point, radius=circle_outer_radius, color=(0, 255, 0), thickness=thickness)
         elif action == "Open Gripper":
             # blue circle
-            cv2.circle(img_copy, point, radius=5, color=(0, 0, 255), thickness=2)
+            cv2.circle(img_copy, point, radius=circle_outer_radius, color=(0, 0, 255), thickness=thickness)
     
     return img_copy
 
 
-def build_trajectory_image(static_img_start, vlm_response, save_traj_imgs, task_nr=-1, task="", output_dir=None):
+def build_trajectory_image(static_img_start, vlm_response, save_traj_imgs, task_nr=-1, task="", thickness=None, output_dir=None):
     gripper_points, gripper_actions = extract_gripper_points(vlm_response)
-    static_traj_img = draw_trajectory(static_img_start, gripper_points, gripper_actions)
+    static_traj_img = draw_trajectory(static_img_start, gripper_points, gripper_actions, thickness)
 
     if save_traj_imgs:
         if task_nr == -1 or task == "":
