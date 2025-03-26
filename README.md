@@ -29,11 +29,12 @@ This repository contains the code and benchmarks for my Bachelor's thesis titled
  ┃ ┃ ┃ ┃ ┣ 📂models             # Policy agent, CLIP nets, perceptual encoders & diffusion model
  ┃ ┃ ┃ ┃ ┣ 📂rollout            # Rollout scripts for CALVIN & LIBERO
  ┃ ┃ ┃ ┃ ┣ 📂utils              # Learning rate schedulers, data transforms, model saving, etc.
- ┃ ┃ ┃ ┃ ┣ 📂wrappers           # HULC wrapper for CALVIN
+ ┃ ┃ ┃ ┃ ┗ 📂wrappers           # HULC wrapper for CALVIN
  ┃ ┃ ┃ ┣ 📂preprocess           # Preprocessing for CALVIN to optimize GPU utilization for training
  ┃ ┃ ┃ ┣ 📂pretrained           # Pretrained models (non-existent at first)
- ┃ ┃ ┃ ┣ 📂pyhash-0.9.3         # Custom pyhash package (to mitigate version conflicts)
- ┃ ┃ ┗ 📂Qwen2-VL               # VLM of iTRAP
+ ┃ ┃ ┃ ┗ 📂pyhash-0.9.3         # Custom pyhash package (to mitigate version conflicts)
+ ┃ ┃ ┣ 📂Qwen2-VL               # VLM of iTRAP
+ ┃ ┃ ┃ ┗ 📂pretrained           # Pretrained models (non-existent at first)
  ┣ 📂logs                       # Logs of training (non-existent at first)
  ┣ 📂outputs                    # Logs of evaluation (non-existent at first)
 ```
