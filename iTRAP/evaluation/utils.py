@@ -52,7 +52,7 @@ def query_vlm(static_img_start, vlm_client, task):
     return response.choices[0].message.content
 
 
-def extract_gripper_points(response):
+def extract_gripper_points_and_actions(response):
     regex_ans = r"<ans>(.*?)</ans>"
     regex_gripper_points = r"\(([0-9.]+),\s*([0-9.]+)\)"
     regex_gripper_actions = r"<action>(.*?)</action>"
@@ -103,7 +103,7 @@ def extract_gripper_points(response):
     return gripper_points, points_before_gripper_actions
 
 
-def draw_trajectory(img, gripper_points, gripper_actions, thickness=2, traj_color="red"):
+def draw_trajectory_onto_image(img, gripper_points, gripper_actions, traj_color="red", thickness=5):
     if gripper_points == []:
         # gripper_actions is then empty as well, error msg already printed in extract_gripper_points
         return img
@@ -138,15 +138,11 @@ def draw_trajectory(img, gripper_points, gripper_actions, thickness=2, traj_colo
     return img_copy
 
 
-def build_trajectory_image(static_img_start, vlm_response, save_traj_imgs, task_nr=-1, task="", thickness=None, output_dir=None):
-    gripper_points, gripper_actions = extract_gripper_points(vlm_response)
-    static_traj_img = draw_trajectory(static_img_start, gripper_points, gripper_actions, thickness)
-
-    if save_traj_imgs:
-        if task_nr == -1 or task == "":
+def save_trajectory_image(traj_img, task_nr, task, output_dir=None):
+    if task_nr == -1 or task == "":
             print(colored("Warning: No task description provided for traj img saving. Make sure to provide task and task_nr", "yellow"))
-        traj_imgs_dir = "traj_imgs" if output_dir is None else f"{output_dir}/traj_imgs"
-        os.makedirs(traj_imgs_dir, exist_ok=True)
-        Image.fromarray(static_traj_img).save(f"{traj_imgs_dir}/{task_nr:04d}_{task}.png")
 
-    return static_traj_img
+    traj_imgs_dir = "traj_imgs" if output_dir is None else f"{output_dir}/traj_imgs"
+    os.makedirs(traj_imgs_dir, exist_ok=True)
+
+    Image.fromarray(traj_img).save(f"{traj_imgs_dir}/{task_nr:04d}_{task}.png")

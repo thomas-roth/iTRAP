@@ -7,7 +7,7 @@ from tqdm import tqdm
 from dtw import *
 
 sys.path.append(str(Path(__file__).absolute().parents[2]))
-from iTRAP.evaluation.itrap_evaluate import draw_trajectory, extract_gripper_points
+from iTRAP.evaluation.itrap_evaluate import draw_trajectory_onto_image, extract_gripper_points_and_actions
 
 
 def parse_vlm_outputs(file_path: str) -> list:
@@ -20,8 +20,8 @@ def parse_vlm_outputs(file_path: str) -> list:
 
 
 def get_alignment_of_gripper_points(pred, label):
-    gripper_points_pred, _ = extract_gripper_points(pred)
-    gripper_points_label, _ = extract_gripper_points(label)
+    gripper_points_pred, _ = extract_gripper_points_and_actions(pred)
+    gripper_points_label, _ = extract_gripper_points_and_actions(label)
 
     dtw_alignment = dtw(np.array(gripper_points_pred), np.array(gripper_points_label), keep_internals=True)
 
@@ -29,8 +29,8 @@ def get_alignment_of_gripper_points(pred, label):
 
 
 def get_alignment_of_gripper_actions(pred, label):
-    _, gripper_actions_pred = extract_gripper_points(pred)
-    _, gripper_actions_label = extract_gripper_points(label)
+    _, gripper_actions_pred = extract_gripper_points_and_actions(pred)
+    _, gripper_actions_label = extract_gripper_points_and_actions(label)
 
     gripper_action_dists = []
     same_gripper_actions = []
@@ -52,8 +52,8 @@ def get_alignment_of_gripper_actions(pred, label):
 
 
 def build_and_save_trajectory_images(base_path, img, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label, prompt, dtw_dist, output_nr):
-    traj_img_pred = draw_trajectory(np.array(img), gripper_points_pred, gripper_actions_pred, traj_color="green")
-    traj_img_pred_label = draw_trajectory(traj_img_pred, gripper_points_label, gripper_actions_label, traj_color="red")
+    traj_img_pred = draw_trajectory_onto_image(np.array(img), gripper_points_pred, gripper_actions_pred, traj_color="green")
+    traj_img_pred_label = draw_trajectory_onto_image(traj_img_pred, gripper_points_label, gripper_actions_label, traj_color="red")
 
     task = prompt.split("<prompt>")[1].split("</prompt>")[0].replace(" ", "_")
     Image.fromarray(traj_img_pred_label).save(f"{base_path}/traj_imgs/{output_nr:04d}_{task}_{round(dtw_dist * 100 / img.size[0], 2)}.png")

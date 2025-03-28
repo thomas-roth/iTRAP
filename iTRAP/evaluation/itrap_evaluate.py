@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).absolute().parents[2]))
 sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "MoDE_Diffusion_Policy"))
-from iTRAP.evaluation.utils import build_trajectory_image, query_vlm, setup_vlm_client
+from iTRAP.evaluation.utils import setup_vlm_client, query_vlm, extract_gripper_points_and_actions, draw_trajectory_onto_image, save_trajectory_image
 from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.utils import get_default_mode_and_env, get_env_state_for_initial_condition
 from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.multistep_sequences import get_sequences
 from iTRAP.models.MoDE_Diffusion_Policy.mode.rollout.rollout_video import RolloutVideo
@@ -149,18 +149,24 @@ class ItrapEvaluator:
 
         goal = self.lang_embeddings.get_lang_goal(subtask)
 
+        # get trajectory points & actions from initial state of scene & robot (static camera image untransformed as render() used instead of get_obs())
+        static_img_start = self.env.cameras[0].render()[0]
+        response = query_vlm(static_img_start, self.vlm_client, subtask)
+        traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(response)
+
         self.policy.reset()
         start_info = self.env.get_info()
 
         success = False
         for step in tqdm(range(self.mode_eval_cfg.ep_len), desc=f"Rolling out policy for task {subtask}", leave=False):
             if step % self.policy.multistep == 0:
-                static_img_start = self.env.cameras[0].render()[0]
-                response = query_vlm(static_img_start, self.vlm_client, subtask)
-                static_traj_img = build_trajectory_image(static_img_start, response, save_traj_imgs=False, task_nr=step, task=subtask,
-                                                         thickness=5, output_dir=self.output_dir)
+                # model predicts multistep actions per step => only draw trajectory once per multistep
+                untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
+                untransformed_static_traj_img = draw_trajectory_onto_image(untransformed_static_img, traj_gripper_points, traj_gripper_actions)
+                save_trajectory_image(untransformed_static_traj_img, task_nr=step, task=subtask)
 
-                transformed_static_traj_img = torch.tensor(static_traj_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
+                # apply transforms to trajectory image
+                transformed_static_traj_img = torch.tensor(untransformed_static_traj_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
                 for transform in self.val_transforms:
                     transformed_static_traj_img = transform(transformed_static_traj_img)
                 
