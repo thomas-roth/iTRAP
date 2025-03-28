@@ -109,10 +109,6 @@ class ItrapEvaluator:
             results.append(success_counter)
 
             if self.record:
-                # FIXME: add goal image as video thumbnail
-                #normalized_goal_img = goal["vis_image"] / 127.5 - 1 # normalize to [-1, 1]
-                #rollout_video.add_goal_thumbnail(normalized_goal_img.permute(2, 0, 1)) # shape: C, H, W
-
                 self.rollout_video.log(self.policy_global_step)
         
         self.log_success_rate(results)
@@ -158,6 +154,13 @@ class ItrapEvaluator:
         self.policy.reset()
         start_info = self.env.get_info()
 
+        if self.record:
+            # update video with initial state
+            static_img = self.env.cameras[0].render()[0].squeeze()
+            static_traj_img = draw_trajectory_onto_image(static_img, traj_gripper_points, traj_gripper_actions)
+            normalized_static_traj_img = static_traj_img / 127.5 - 1 # normalize to [-1, 1]
+            self.rollout_video.update(torch.tensor(normalized_static_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device)) # shape: B, F, C, H, W
+
         local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
 
         success = False
@@ -179,9 +182,10 @@ class ItrapEvaluator:
             obs, _, _, current_info = self.env.step(action)
 
             if self.record:
-                normalized_rgb_static = self.env.cameras[0].render()[0] / 127.5 - 1 # normalize to [-1, 1]
-                normalized_rgb_static = torch.tensor(normalized_rgb_static).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device)
-                self.rollout_video.update(normalized_rgb_static) # shape: B, F, C, H, W
+                static_img = self.env.cameras[0].render()[0].squeeze()
+                static_traj_img = draw_trajectory_onto_image(static_img, traj_gripper_points, traj_gripper_actions)
+                normalized_static_traj_img = static_traj_img / 127.5 - 1 # normalize to [-1, 1]
+                self.rollout_video.update(torch.tensor(normalized_static_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device))
 
             # check if current steps solves task
             current_task_info = self.task_oracle.get_task_info_for_set(start_info, current_info, {subtask})
