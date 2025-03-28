@@ -8,6 +8,7 @@ import hydra
 import numpy as np
 from pytorch_lightning import seed_everything
 import torch
+import torch.distributed as dist
 from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).absolute().parents[2]))
@@ -122,16 +123,16 @@ class ItrapEvaluator:
         self.env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
 
         if self.record:
-            tag = f"lh-eval_seq-nr-{seq_nr:04d}_global-step"
+            tag = f"lh-eval_seq-nr-{seq_nr:03d}_global-step"
             caption = " | ".join(eval_sequence)
             self.rollout_video.new_video(tag, caption)
 
         success_counter = 0
-        for subtask in eval_sequence:
+        for subtask_nr, subtask in enumerate(eval_sequence):
             if self.record:
                 self.rollout_video.new_subtask()
             
-            success = self.rollout_subtask(subtask)
+            success = self.rollout_subtask(subtask, seq_nr, subtask_nr)
 
             if self.record:
                 self.rollout_video.draw_outcome(success)
@@ -144,7 +145,7 @@ class ItrapEvaluator:
         return success_counter
     
 
-    def rollout_subtask(self, subtask):
+    def rollout_subtask(self, subtask, seq_nr, subtask_nr):
         obs = self.env.get_obs()
 
         goal = self.lang_embeddings.get_lang_goal(subtask)
@@ -157,13 +158,15 @@ class ItrapEvaluator:
         self.policy.reset()
         start_info = self.env.get_info()
 
+        local_rank = int(dist.get_rank()) if (dist.is_available() and dist.is_initialized()) else 0
+
         success = False
         for step in tqdm(range(self.mode_eval_cfg.ep_len), desc=f"Rolling out policy for task {subtask}", leave=False):
             if step % self.policy.multistep == 0:
                 # model predicts multistep actions per step => only draw trajectory once per multistep
                 untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
                 untransformed_static_traj_img = draw_trajectory_onto_image(untransformed_static_img, traj_gripper_points, traj_gripper_actions)
-                save_trajectory_image(untransformed_static_traj_img, task_nr=step, task=subtask)
+                #save_trajectory_image(untransformed_static_traj_img, subtask, local_rank, seq_nr, subtask_nr, step, self.output_dir)
 
                 # apply transforms to trajectory image
                 transformed_static_traj_img = torch.tensor(untransformed_static_traj_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
