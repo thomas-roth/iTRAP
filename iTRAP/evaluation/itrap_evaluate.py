@@ -8,11 +8,12 @@ import hydra
 import numpy as np
 from pytorch_lightning import seed_everything
 import torch
+import torch.distributed as dist
 from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).absolute().parents[2]))
 sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "MoDE_Diffusion_Policy"))
-from iTRAP.evaluation.utils import build_trajectory_image, query_vlm, setup_vlm_client
+from iTRAP.evaluation.utils import setup_vlm_client, query_vlm, extract_gripper_points_and_actions, draw_trajectory_onto_image
 from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.utils import get_default_mode_and_env, get_env_state_for_initial_condition
 from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.multistep_sequences import get_sequences
 from iTRAP.models.MoDE_Diffusion_Policy.mode.rollout.rollout_video import RolloutVideo
@@ -108,10 +109,6 @@ class ItrapEvaluator:
             results.append(success_counter)
 
             if self.record:
-                # FIXME: add goal image as video thumbnail
-                #normalized_goal_img = goal["vis_image"] / 127.5 - 1 # normalize to [-1, 1]
-                #rollout_video.add_goal_thumbnail(normalized_goal_img.permute(2, 0, 1)) # shape: C, H, W
-
                 self.rollout_video.log(self.policy_global_step)
         
         self.log_success_rate(results)
@@ -122,16 +119,16 @@ class ItrapEvaluator:
         self.env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
 
         if self.record:
-            tag = f"lh-eval_seq-nr-{seq_nr:04d}_global-step"
+            tag = f"seq-nr-{seq_nr:03d}"
             caption = " | ".join(eval_sequence)
             self.rollout_video.new_video(tag, caption)
 
         success_counter = 0
-        for subtask in eval_sequence:
+        for subtask_nr, subtask in enumerate(eval_sequence):
             if self.record:
                 self.rollout_video.new_subtask()
             
-            success = self.rollout_subtask(subtask)
+            success = self.rollout_subtask(subtask, seq_nr, subtask_nr)
 
             if self.record:
                 self.rollout_video.draw_outcome(success)
@@ -144,16 +141,20 @@ class ItrapEvaluator:
         return success_counter
     
 
-    def rollout_subtask(self, subtask):
+    def rollout_subtask(self, subtask, seq_nr, subtask_nr):
         obs = self.env.get_obs()
 
         goal = self.lang_embeddings.get_lang_goal(subtask)
 
         static_img_start = self.env.cameras[0].render()[0]
-        response = query_vlm(static_img_start, self.vlm_client, subtask)
-        static_traj_img = build_trajectory_image(static_img_start, response, save_traj_imgs=False, task_nr=0, task=subtask, output_dir=self.output_dir)
+        vlm_response = query_vlm(static_img_start, self.vlm_client, subtask)
+        traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response)
 
-        transformed_static_traj_img = torch.tensor(static_traj_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
+        black_img = np.zeros_like(static_img_start)
+        black_traj_img = draw_trajectory_onto_image(black_img, traj_gripper_points, traj_gripper_actions)
+
+        # TODO: split between clip & film-resnet approaches
+        transformed_static_traj_img = torch.tensor(black_traj_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
         for transform in self.val_transforms:
             transformed_static_traj_img = transform(transformed_static_traj_img)
         
@@ -162,15 +163,24 @@ class ItrapEvaluator:
         self.policy.reset()
         start_info = self.env.get_info()
 
+        if self.record:
+            # update video with initial state
+            static_traj_img = draw_trajectory_onto_image(static_img_start, traj_gripper_points, traj_gripper_actions)
+            normalized_static_traj_img = static_traj_img / 127.5 - 1 # normalize to [-1, 1]
+            self.rollout_video.update(torch.tensor(normalized_static_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device)) # shape: B, F, C, H, W
+
+        local_rank = int(dist.get_rank()) if (dist.is_avaliable() and dist.is_initialized()) else 0
+
         success = False
         for step in tqdm(range(self.mode_eval_cfg.ep_len), desc=f"Rolling out policy for task {subtask}", leave=False):
             action = self.policy.step(obs, goal)
             obs, _, _, current_info = self.env.step(action)
 
             if self.record:
-                normalized_rgb_static = self.env.cameras[0].render()[0] / 127.5 - 1 # normalize to [-1, 1]
-                normalized_rgb_static = torch.tensor(normalized_rgb_static).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device)
-                self.rollout_video.update(normalized_rgb_static) # shape: B, F, C, H, W
+                static_img = self.env.cameras[0].render()[0].squeeze()
+                static_traj_img = draw_trajectory_onto_image(static_img, traj_gripper_points, traj_gripper_actions)
+                normalized_static_traj_img = static_traj_img / 127.5 - 1 # normalize to [-1, 1]
+                self.rollout_video.update(torch.tensor(normalized_static_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device)) # shape: B, F, C, H, W
 
             # check if current steps solves task
             current_task_info = self.task_oracle.get_task_info_for_set(start_info, current_info, {subtask})

@@ -20,14 +20,14 @@ from iTRAP.models.MoDE_Diffusion_Policy.mode.models.perceptual_encoders.pretrain
 
 class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
     def __init__(self, timestamp, dataset_path, output_dir,
-                 traj_simplification_rdp_epsilon=0.01, traj_drawing_thickness=2, traj_drawing_circle_radius=5,
+                 traj_simplification_rdp_epsilon=0.01, traj_drawing_thickness=2,
                  gif_frame_quantization_method=2, gif_frame_quantization_kmeans=1, gif_duration=67, gif_num_loops=0):
         
         self.timestamp = timestamp
         super().__init__(dataset_path, traj_simplification_rdp_epsilon)
         self.output_dir = output_dir
         self.traj_drawing_thickness = traj_drawing_thickness # pixels
-        self.traj_drawing_circle_radius = traj_drawing_circle_radius # pixels
+        self.traj_drawing_circle_radius = 2 * traj_drawing_thickness # pixels
         self.gif_frame_quantization_method = gif_frame_quantization_method # enum of size 4, 2 = Image.FASTOCTREE (fast but less accurate)
         self.gif_frame_quantization_kmeans = gif_frame_quantization_kmeans # cluster changes of pixels allowed per kmeans iteration => lower = try harder to find best color palette, 0 = no clustering
         self.gif_duration = gif_duration # ms per frame => 67 ≈ 15 fps

@@ -52,58 +52,75 @@ def query_vlm(static_img_start, vlm_client, task):
     return response.choices[0].message.content
 
 
-def extract_gripper_points(response):
+def extract_gripper_points_and_actions(response, error_logger=None):
     regex_ans = r"<ans>(.*?)</ans>"
     regex_gripper_points = r"\(([0-9.]+),\s*([0-9.]+)\)"
     regex_gripper_actions = r"<action>(.*?)</action>"
 
-    response_content = re.search(regex_ans, response, re.DOTALL)
-    if response_content is None:
-        print(colored(f"Error: Invalid response: {response}. Skipping task", "red"))
-        return [], []
-    else:
+    try:
+        response_content = re.search(regex_ans, response, re.DOTALL) # re.DOTALL to match newlines to broaden accepted response syntax
         response_content = response_content.group(1)
 
-    gripper_points = []
-    for match in re.finditer(regex_gripper_points, response_content):
-        if match is None:
-            # should not happen, but did happen once ):
-            print(colored(f"Error: Invalid gripper point in response: {response_content}. Skipping match", "red"))
-            continue
-
-        x = float(match.group(1))
-        y = float(match.group(2))
-        gripper_points.append((x, y))
-    
-    gripper_actions = []
-    for match in re.finditer(regex_gripper_actions, response_content):
-        if match is None:
-            # should not happen, but did happen once ):
-            print(colored(f"Error: Invalid gripper action in response: {response_content}. Skipping match", "red"))
-            continue
-
-        action = match.group(1)
-        action_start_pos = match.start()
-        gripper_actions.append((action_start_pos, action))
-    
-    gripper_actions.sort()
-
-    points_before_gripper_actions = []
-    for action_start_pos, action in gripper_actions:
-        prev_point_index = -1
-        for i, match in enumerate(re.finditer(regex_gripper_points, response_content)):
-            if match.end() < action_start_pos:
-                prev_point_index = i
+        # TODO: remove after testing VLM responses
+        tmp_stricter_response_content = re.search(r"^" + regex_ans + r"$", response, re.DOTALL)
+        if tmp_stricter_response_content is None:
+            if error_logger is not None:
+                error_logger.error(f"Invalid VLM response if strict: {response}")
             else:
-                break
+                print(colored(f"Error: Invalid VLM response if strict: {response}", "red"))
+
+        gripper_points = []
+        for match in re.finditer(regex_gripper_points, response_content):
+            if match is None:
+                # should not happen, but did happen once ):
+                if error_logger is not None:
+                    error_logger.error(f"Invalid gripper point in response: {response_content}. Skipping match")
+                else:
+                    print(colored(f"Error: Invalid gripper point in response: {response_content}. Skipping match", "red"))
+                continue
+
+            x = float(match.group(1))
+            y = float(match.group(2))
+            gripper_points.append((x, y))
         
-        if prev_point_index >= 0:
-            points_before_gripper_actions.append((gripper_points[prev_point_index], action))
+        gripper_actions = []
+        for match in re.finditer(regex_gripper_actions, response_content):
+            if match is None:
+                # should not happen, but did happen once ):
+                if error_logger is not None:
+                    error_logger.error(f"Invalid gripper action in response: {response_content}. Skipping match")
+                else:
+                    print(colored(f"Error: Invalid gripper action in response: {response_content}. Skipping match", "red"))
+                continue
+
+            action = match.group(1)
+            action_start_pos = match.start()
+            gripper_actions.append((action_start_pos, action))
+        
+        gripper_actions.sort()
+
+        points_before_gripper_actions = []
+        for action_start_pos, action in gripper_actions:
+            prev_point_index = -1
+            for i, match in enumerate(re.finditer(regex_gripper_points, response_content)):
+                if match.end() < action_start_pos:
+                    prev_point_index = i
+                else:
+                    break
+            
+            if prev_point_index >= 0:
+                points_before_gripper_actions.append((gripper_points[prev_point_index], action))
+    except Exception as e:
+        if error_logger is not None:
+            error_logger.error(f"Invalid VLM response: {response}. Error msg: {e}. Skipping task")
+        else:
+            print(colored(f"Error: Invalid VLM response: {response}. Error msg: {e}. Skipping task", "red"))
+        return [], []
 
     return gripper_points, points_before_gripper_actions
 
 
-def draw_trajectory(img, gripper_points, gripper_actions, traj_color="red"):
+def draw_trajectory_onto_image(img, gripper_points, gripper_actions, traj_color="red", thickness=2):
     if gripper_points == []:
         # gripper_actions is then empty as well, error msg already printed in extract_gripper_points
         return img
@@ -124,28 +141,22 @@ def draw_trajectory(img, gripper_points, gripper_actions, traj_color="red"):
         else:
             color = (0, 0, round((i+1) / len(scaled_gripper_points) * 255)) # black to blue over time
         
-        cv2.line(img_copy, scaled_gripper_points[i], scaled_gripper_points[i+1], color, thickness=2)
+        cv2.line(img_copy, scaled_gripper_points[i], scaled_gripper_points[i+1], color, thickness)
     
     for point, action in scaled_gripper_actions:
+        circle_outer_radius = 2 * thickness
         if action == "Close Gripper":
             # green circle
-            cv2.circle(img_copy, point, radius=5, color=(0, 255, 0), thickness=2)
+            cv2.circle(img_copy, point, radius=circle_outer_radius, color=(0, 255, 0), thickness=thickness)
         elif action == "Open Gripper":
             # blue circle
-            cv2.circle(img_copy, point, radius=5, color=(0, 0, 255), thickness=2)
+            cv2.circle(img_copy, point, radius=circle_outer_radius, color=(0, 0, 255), thickness=thickness)
     
     return img_copy
 
 
-def build_trajectory_image(static_img_start, vlm_response, save_traj_imgs, task_nr=-1, task="", output_dir=None):
-    gripper_points, gripper_actions = extract_gripper_points(vlm_response)
-    static_traj_img = draw_trajectory(static_img_start, gripper_points, gripper_actions)
+def save_trajectory_image(traj_img, task, local_rank, seq_nr, subtask_nr, step_nr, root_output_dir=None):
+    traj_imgs_dir = "traj_imgs" if root_output_dir is None else os.path.join(root_output_dir, "traj_imgs")
+    os.makedirs(traj_imgs_dir, exist_ok=True)
 
-    if save_traj_imgs:
-        if task_nr == -1 or task == "":
-            print(colored("Warning: No task description provided for traj img saving. Make sure to provide task and task_nr", "yellow"))
-        traj_imgs_dir = "traj_imgs" if output_dir is None else f"{output_dir}/traj_imgs"
-        os.makedirs(traj_imgs_dir, exist_ok=True)
-        Image.fromarray(static_traj_img).save(f"{traj_imgs_dir}/{task_nr:04d}_{task}.png")
-
-    return static_traj_img
+    Image.fromarray(traj_img).save(f"{traj_imgs_dir}/rank-{local_rank:01d}_seq-{seq_nr:03d}_task-{subtask_nr:01d}-{task}_step-{step_nr:03d}.png")
