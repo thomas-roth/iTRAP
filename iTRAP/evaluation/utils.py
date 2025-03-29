@@ -58,8 +58,16 @@ def extract_gripper_points_and_actions(response, error_logger=None):
     regex_gripper_actions = r"<action>(.*?)</action>"
 
     try:
-        response_content = re.search(regex_ans, response, re.DOTALL)
+        response_content = re.search(regex_ans, response, re.DOTALL) # re.DOTALL to match newlines to broaden accepted response syntax
         response_content = response_content.group(1)
+
+        # TODO: remove after testing VLM responses
+        tmp_stricter_response_content = re.search(r"^" + regex_ans + r"$", response, re.DOTALL)
+        if tmp_stricter_response_content is None:
+            if error_logger is not None:
+                error_logger.error(f"Invalid VLM response if strict: {response}")
+            else:
+                print(colored(f"Error: Invalid VLM response if strict: {response}", "red"))
 
         gripper_points = []
         for match in re.finditer(regex_gripper_points, response_content):
@@ -104,15 +112,15 @@ def extract_gripper_points_and_actions(response, error_logger=None):
                 points_before_gripper_actions.append((gripper_points[prev_point_index], action))
     except Exception as e:
         if error_logger is not None:
-            error_logger.error(f"Invalid VLM response ('{response}'). {e}. Skipping task")
+            error_logger.error(f"Invalid VLM response: {response}. Error msg: {e}. Skipping task")
         else:
-            print(colored(f"Error: Invalid VLM response ('{response}'). {e}. Skipping task", "red"))
+            print(colored(f"Error: Invalid VLM response: {response}. Error msg: {e}. Skipping task", "red"))
         return [], []
 
     return gripper_points, points_before_gripper_actions
 
 
-def draw_trajectory_onto_image(img, gripper_points, gripper_actions, traj_color="red", thickness=5):
+def draw_trajectory_onto_image(img, gripper_points, gripper_actions, traj_color="red", thickness=2):
     if gripper_points == []:
         # gripper_actions is then empty as well, error msg already printed in extract_gripper_points
         return img
