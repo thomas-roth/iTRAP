@@ -52,7 +52,7 @@ def query_vlm(static_img_start, vlm_client, task):
     return response.choices[0].message.content
 
 
-def extract_gripper_points_and_actions(response, error_logger=None):
+def extract_gripper_points_and_actions(response, error_logger=None, stretch_factor=1.1):
     regex_ans = r"<ans>(.*?)</ans>"
     regex_gripper_points = r"\(([0-9.]+),\s*([0-9.]+)\)"
     regex_gripper_actions = r"<action>(.*?)</action>"
@@ -70,7 +70,7 @@ def extract_gripper_points_and_actions(response, error_logger=None):
                 print(colored(f"Error: Invalid VLM response if strict: {response}", "red"))
 
         gripper_points = []
-        for match in re.finditer(regex_gripper_points, response_content):
+        for i, match in enumerate(re.finditer(regex_gripper_points, response_content)):
             if match is None:
                 # should not happen, but did happen once ):
                 if error_logger is not None:
@@ -81,6 +81,20 @@ def extract_gripper_points_and_actions(response, error_logger=None):
 
             x = float(match.group(1))
             y = float(match.group(2))
+
+            if i > 0:
+                x_start = gripper_points[0][0]
+                y_start = gripper_points[0][1]
+
+                # stretch coord points (start point stays the same, end point stretched by stretch factor, points in between stretched accordingly)
+                progression = i / (len(list(re.finditer(regex_gripper_points, response_content))) - 1)
+                x = x_start + (x - x_start) * (1.0 + (stretch_factor - 1.0) * progression)
+                y = y_start + (y - y_start) * (1.0 + (stretch_factor - 1.0) * progression)
+
+                # make sure strected coords aren't out of bounds
+                x = max(0.0, min(1.0, x))
+                y = max(0.0, min(1.0, y))
+
             gripper_points.append((x, y))
         
         gripper_actions = []
