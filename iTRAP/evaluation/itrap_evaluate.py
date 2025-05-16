@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).absolute().parents[2]))
 sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "MoDE_Diffusion_Policy"))
-from iTRAP.evaluation.utils import setup_vlm_client, query_vlm, extract_gripper_points_and_actions, draw_trajectory_onto_image
+from iTRAP.evaluation.utils import setup_vlm_client, query_vlm, extract_gripper_points_and_actions, draw_trajectory_onto_image, save_trajectory_image
 from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.utils import get_default_mode_and_env, get_env_state_for_initial_condition
 from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.multistep_sequences import get_sequences
 from iTRAP.models.MoDE_Diffusion_Policy.mode.rollout.rollout_video import RolloutVideo
@@ -119,7 +119,7 @@ class ItrapEvaluator:
         self.env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
 
         if self.record:
-            tag = f"seq-nr-{seq_nr:03d}"
+            tag = f"lh-eval_seq-nr-{seq_nr:03d}_global-step"
             caption = " | ".join(eval_sequence)
             self.rollout_video.new_video(tag, caption)
 
@@ -146,15 +146,15 @@ class ItrapEvaluator:
 
         goal = self.lang_embeddings.get_lang_goal(subtask)
 
+        # get trajectory points & actions from initial state of scene & robot (static camera image untransformed as render() used instead of get_obs())
         static_img_start = self.env.cameras[0].render()[0]
-        vlm_response = query_vlm(static_img_start, self.vlm_client, subtask)
-        traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response)
+        response = query_vlm(static_img_start, self.vlm_client, subtask)
+        traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(response)
 
-        black_img = np.zeros_like(static_img_start)
-        black_traj_img = draw_trajectory_onto_image(black_img, traj_gripper_points, traj_gripper_actions)
+        untransformed_traj_img = draw_trajectory_onto_image(static_img_start, traj_gripper_points, traj_gripper_actions)
 
         # TODO: split between clip & film-resnet approaches
-        transformed_static_traj_img = torch.tensor(black_traj_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
+        transformed_static_traj_img = torch.tensor(untransformed_traj_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
         for transform in self.val_transforms:
             transformed_static_traj_img = transform(transformed_static_traj_img)
         

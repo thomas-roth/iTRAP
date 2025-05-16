@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from PIL import Image
 import numpy as np
@@ -56,7 +57,8 @@ def build_and_save_trajectory_images(base_path, img, gripper_points_pred, grippe
     traj_img_pred_label = draw_trajectory_onto_image(traj_img_pred, gripper_points_label, gripper_actions_label, traj_color="red")
 
     task = prompt.split("<prompt>")[1].split("</prompt>")[0].replace(" ", "_")
-    Image.fromarray(traj_img_pred_label).save(f"{base_path}/traj_imgs/{output_nr:04d}_{task}_{round(dtw_dist * 100 / img.size[0], 2)}.png")
+    os.makedirs(f"{base_path}/traj_imgs", exist_ok=True)
+    Image.fromarray(traj_img_pred_label).save(f"{base_path}/traj_imgs/{output_nr:03d}_{task}_{round(dtw_dist * 100 / img.size[0], 2)}.png")
 
 
 def plot_trajs_basic(gripper_points_pred, gripper_points_label):

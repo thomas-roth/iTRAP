@@ -1,4 +1,4 @@
 [submodule "iTRAP/models/MoDE_Diffusion_Policy"]
 	path = iTRAP/models/MoDE_Diffusion_Policy
 	url = git@github.com:thomas-roth/MoDE_Diffusion_Policy.git
-	branch = bt_traj-img-in-goal_film-resnet
+	branch = bt_traj-img-in-goal_clip
