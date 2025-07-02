@@ -12,17 +12,17 @@ import torch.distributed as dist
 from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).absolute().parents[2]))
-sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "MoDE_Diffusion_Policy"))
+sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "flower_vla_calvin"))
 from iTRAP.evaluation.utils import setup_vlm_client, query_vlm, extract_gripper_points_and_actions, draw_trajectory_onto_image, save_trajectory_image
-from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.utils import get_default_mode_and_env, get_env_state_for_initial_condition
-from iTRAP.models.MoDE_Diffusion_Policy.mode.evaluation.multistep_sequences import get_sequences
-from iTRAP.models.MoDE_Diffusion_Policy.mode.rollout.rollout_video import RolloutVideo
+from iTRAP.models.flower_vla_calvin.flower.evaluation.utils import get_default_mode_and_env, get_env_state_for_initial_condition
+from iTRAP.models.flower_vla_calvin.flower.evaluation.multistep_sequences import get_sequences
+from iTRAP.models.flower_vla_calvin.flower.rollout.rollout_video import RolloutVideo
 
 
 
 class ItrapEvaluator:
     def __init__(self):
-        with hydra.initialize(config_path="../models/MoDE_Diffusion_Policy/conf"):
+        with hydra.initialize(config_path="../models/flower_vla_calvin/conf"):
             self.mode_eval_cfg = hydra.compose(config_name="mode_evaluate")
             complete_calvin_cfg = hydra.compose(config_name="config_calvin")
         
@@ -67,7 +67,7 @@ class ItrapEvaluator:
     def setup_policy(self):
         seed_everything(0, workers=True)
 
-        sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "MoDE_Diffusion_Policy" / "calvin_env"))
+        sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "flower_vla_calvin" / "calvin_env"))
         self.policy, self.env, _, self.lang_embeddings = get_default_mode_and_env(
             self.mode_eval_cfg.train_folder,
             self.mode_eval_cfg.dataset_path,

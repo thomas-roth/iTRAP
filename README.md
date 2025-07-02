@@ -17,7 +17,7 @@ This repository contains the code and benchmarks for my Bachelor's thesis titled
  ┃ ┃ ┗ 📂calvin                 # Dataset downloader & dataset builders for CALVIN dataset
  ┃ ┣ 📂evaluation               # Evaluation scripts for iTRAP & VLM
  ┃ ┗ 📂models                   # VLM & Policy of iTRAP
- ┃ ┃ ┣ 📂MoDE_Diffusion_Policy  # Policy of iTRAP
+ ┃ ┃ ┣ 📂flower_vla_calvin      # Policy of iTRAP
  ┃ ┃ ┃ ┣ 📂LIBERO               # LIBERO benchmark for simulation & real-world tests (not used)
  ┃ ┃ ┃ ┣ 📂calvin_env           # CALVIN simulation environment
  ┃ ┃ ┃ ┣ 📂conf                 # Config files for training & evaluation on CALVIN & LIBERO
@@ -78,11 +78,11 @@ To train the VLM on CALVIN, follow the steps below:
 To train the policy on CALVIN, follow the steps below:
 1. Build the policy dataset:
     ```bash
-    python $ITRAP_ROOT/iTRAP/datasets/calvin/calvin_policy_dataset_builder.py --dataset-path $ITRAP_ROOT/iTRAP/datasets/calvin/task_<split> --output-dir $ITRAP_ROOT/iTRAP/models/MoDE_Diffusion_Policy/dataset/task_<split>
+    python $ITRAP_ROOT/iTRAP/datasets/calvin/calvin_policy_dataset_builder.py --dataset-path $ITRAP_ROOT/iTRAP/datasets/calvin/task_<split> --output-dir $ITRAP_ROOT/iTRAP/models/flower_vla_calvin/dataset/task_<split>
     ```
-2. Choose & download a pretrained policy from the [collection](https://huggingface.co/collections/mbreuss/mode-6760239f42bc757093b6de13):
+2. Choose & download a pretrained policy from the [collection](https://huggingface.co/collections/mbreuss/flower-vla-67d60e95bf2990699fcef81f):
     ```bash
-    cd $ITRAP_ROOT/iTRAP/models/MoDE_Diffusion_Policy
+    cd $ITRAP_ROOT/iTRAP/models/flower_vla_calvin
     mkdir pretrained
     cd pretrained
     git clone <chosen_pretrained_policy>
@@ -90,7 +90,7 @@ To train the policy on CALVIN, follow the steps below:
     mkdir .hydra
     mv config.yaml .hydra/config.yaml
     ```
-3. Adjust the training parameters in the config files ([main config](iTRAP/models/MoDE_Diffusion_Policy/conf/config_calvin.yaml), [checkpoint path, optimizer & lr scheduler](iTRAP/models/MoDE_Diffusion_Policy/conf/model/mode_agent.yaml), [rollout config](iTRAP/models/MoDE_Diffusion_Policy/conf/callbacks/rollout_lh/calvin.yaml)).
+3. Adjust the training parameters in the config files ([main config](iTRAP/models/flower_vla_calvin/conf/config_calvin.yaml), [checkpoint path, optimizer & lr scheduler](iTRAP/models/flower_vla_calvin/conf/model/flower.yaml), [rollout config](iTRAP/models/flower_vla_calvin/conf/callbacks/rollout_lh/calvin.yaml)).
 4. Start the VLM server in a separate terminal (required during rollout):
     ```bash
     conda activate itrap
@@ -98,7 +98,7 @@ To train the policy on CALVIN, follow the steps below:
     ```
 5. Start the training:
     ```bash
-    python iTRAP/models/MoDE_Diffusion_Policy/mode/training_calvin.py
+    python iTRAP/models/flower_vla_calvin/flower/training_calvin.py
     ```
 
 ### Evaluation

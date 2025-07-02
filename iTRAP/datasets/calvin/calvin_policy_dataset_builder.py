@@ -15,7 +15,7 @@ from tqdm import tqdm
 from calvin_dataset_builder import CalvinDatasetBuilder
 
 sys.path.append(str(Path(__file__).absolute().parents[3]))
-from iTRAP.models.MoDE_Diffusion_Policy.mode.models.perceptual_encoders.pretrained_resnets import FiLMLayer, FiLMResNet18Policy, FiLMResNet34Policy, FiLMResNet50Policy
+from iTRAP.models.flower_vla_calvin.flower.models.flower import FLOWERVLA
 
 
 class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
@@ -44,31 +44,12 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
         self.save_gif_per_seq = False
 
         # load vision encoder
-        sys.path.append(str(Path(__file__).absolute().parents[2] / "models" / "MoDE_Diffusion_Policy"))
-        sys.path.append(str(Path(__file__).absolute().parents[2] / "models" / "MoDE_Diffusion_Policy" / "calvin_env"))
-        with hydra.initialize(config_path="../../models/MoDE_Diffusion_Policy/conf"):
-            complete_calvin_cfg = hydra.compose("config_calvin")
-        
-        if "vision_goal" in complete_calvin_cfg.model:
-            self.vis_encoder = hydra.utils.instantiate(complete_calvin_cfg.model.vision_goal)
-        else:
-            # traj img will replace static cam img => use camera vision encoder for traj img
-            if complete_calvin_cfg.model.resnet_type == '18':
-                ResNetClass = FiLMResNet18Policy # possibly use ResNetEncoderWithFiLM from mode.models.perceptual_encoders.resnets
-            elif complete_calvin_cfg.model.resnet_type == '34':
-                ResNetClass = FiLMResNet34Policy
-            elif complete_calvin_cfg.model.resnet_type == '50':
-                ResNetClass = FiLMResNet50Policy
-            else:
-                raise ValueError(f"Unsupported ResNet type for trajectory image encoder: {complete_calvin_cfg.model.resnet_type}")
-            self.vis_encoder = ResNetClass(condition_dim=complete_calvin_cfg.model.cond_dim)
+        # Create a temporary instance to access the _setup_vlm method
+        flower_cfg = hydra.compose(config_name="flower", config_path="../../models/flower_vla_calvin/conf")
+        temp_flower = hydra.utils.instantiate(flower_cfg)
+        self.vlm = temp_flower.vlm
 
-        if "CLIP" in self.vis_encoder.model_name:
-            self.film_merge_layer = FiLMLayer(condition_dim=complete_calvin_cfg.model.cond_dim, num_features=512)
-        
-        self.AUTO_VIS_LANG_ANN_FOLDER = self.AUTO_VIS_LANG_ANN_FOLDER.replace("<vis-encoder>", self.vis_encoder.model_name)
-
-        self._logger.info(f"Initialized CalvinPolicyDatasetBuilder with vision encoder {self.vis_encoder.model_name}")
+        self._logger.info(f"Initialized CalvinPolicyDatasetBuilder with vision encoder DaViT of Florence-2-large")
 
 
     def _draw_trajectory_onto_img(self, img, gripper_centers, gripper_widths):
@@ -162,18 +143,12 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
         # build auto_vis_lang_ann.npy (load auto_lang_ann and add vision annotations)
         auto_lang_ann = np.load(f"{self.dataset_path}/{dataset_split}/{self.AUTO_LANG_ANN_FOLDER}/auto_lang_ann.npy", allow_pickle=True).item()
         auto_vis_lang_ann = {"vision": {"ann": [], "emb": []}, "language": auto_lang_ann["language"], "info": auto_lang_ann["info"]}
-        for seq_index, traj_imgs_seq in tqdm(enumerate(traj_imgs_all_seqs), total=len(traj_imgs_all_seqs), desc=f"Embedding trajectory images for {dataset_split} split"):
+        for traj_imgs_seq in tqdm(traj_imgs_all_seqs, total=len(traj_imgs_all_seqs), desc=f"Embedding trajectory images for {dataset_split} split"):
             first_static_traj_img = traj_imgs_seq["rgb_static"][0] # don't use rgb_gripper imgs as they don't show the traj well
 
             # encode first static trajectory image
-            if "CLIP" in self.vis_encoder.model_name:
-                first_static_traj_img_embedded = self.vis_encoder([torch.tensor(first_static_traj_img)])
-            elif "FiLMResNet" in self.vis_encoder.model_name:
-                curr_lang_emb = torch.tensor(auto_lang_ann["language"]["emb"][seq_index])
-                first_static_traj_img_embedded = self.vis_encoder(torch.tensor(first_static_traj_img).permute(2, 0, 1).unsqueeze(0), curr_lang_emb)
-            else:
-                raise NotImplementedError(f"Vision encoder {self.vis_encoder.__class__.__name__} not supported")
-            
+            first_static_traj_img_embedded = self.vlm._encode_image(torch.tensor(first_static_traj_img)) # TODO: check shape, device & dtype
+
             auto_vis_lang_ann["vision"]["ann"].append(first_static_traj_img)
             auto_vis_lang_ann["vision"]["emb"].append(first_static_traj_img_embedded)
         
@@ -209,8 +184,8 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-path", type=str, default="/home/troth/data/task_D_D")
-    parser.add_argument("--output-dir", type=str, default="/home/troth/bt/data/calvin_policy_dataset")
+    parser.add_argument("--dataset-path", type=str, default="/home/mbreuss/data/calvin_abc_rlds") # TODO: add rlds transformer
+    parser.add_argument("--output-dir", type=str, default="/home/troth/data/iTRAP-flower/calvin_policy_dataset")
     args = parser.parse_args()
 
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

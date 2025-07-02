@@ -3,10 +3,10 @@
 GREEN='\033[0;32m'
 NC='\033[0m'
 
-# MoDE
-echo "${GREEN}Installing MoDE (1/2)${NC}"
+# FLOWER
+echo "${GREEN}Installing FLOWER (1/2)${NC}"
 echo "${GREEN}Installing calvin (1/4)${NC}"
-cd iTRAP/models/MoDE_Diffusion_Policy/calvin_env/tacto
+cd iTRAP/models/flower_vla_calvin/calvin_env/tacto
 pip install -e .
 cd ..
 pip install -e .
