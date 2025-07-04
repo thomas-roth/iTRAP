@@ -22,11 +22,11 @@ This repository contains the code and benchmarks for my Bachelor's thesis titled
  ┃ ┃ ┃ ┣ 📂calvin_env           # CALVIN simulation environment
  ┃ ┃ ┃ ┣ 📂conf                 # Config files for training & evaluation on CALVIN & LIBERO
  ┃ ┃ ┃ ┣ 📂datasets             # Policy datasets (non-existent at first)
- ┃ ┃ ┃ ┣ 📂mode                 # Model, data modules & training & evaluation scripts
+ ┃ ┃ ┃ ┣ 📂flower               # Model, data modules & training & evaluation scripts
  ┃ ┃ ┃ ┃ ┣ 📂callbacks          # EMA Callback for training & evaluation
  ┃ ┃ ┃ ┃ ┣ 📂datasets           # Data modules for CALVIN & LIBERO
  ┃ ┃ ┃ ┃ ┣ 📂evaluation         # Policy evaluation scripts for CALVIN & LIBERO (not used)
- ┃ ┃ ┃ ┃ ┣ 📂models             # Policy agent, CLIP nets, perceptual encoders & diffusion model
+ ┃ ┃ ┃ ┃ ┣ 📂models             # Policy agent & transformer model
  ┃ ┃ ┃ ┃ ┣ 📂rollout            # Rollout scripts for CALVIN & LIBERO
  ┃ ┃ ┃ ┃ ┣ 📂utils              # Learning rate schedulers, data transforms, model saving, etc.
  ┃ ┃ ┃ ┃ ┗ 📂wrappers           # HULC wrapper for CALVIN
@@ -71,14 +71,14 @@ sh download_data.sh <split>
 To train the VLM on CALVIN, follow the steps below:
 1. Build the VLM dataset:
     ```bash
-    python $ITRAP_ROOT/iTRAP/datasets/calvin/calvin_vlm_dataset_builder.py --dataset-path $ITRAP_ROOT/iTRAP/datasets/calvin/task_<split> --output-dir $ITRAP_ROOT/iTRAP/models/Qwen2-VL/dataset/task_<split>
+    python $ITRAP_ROOT/iTRAP/datasets/calvin/calvin_vlm_dataset_builder.py --dataset-path <calvin_dataset_path> --output-dir <vlm_dataset_output_dir>
     ```
-2. Train the VLM using LLaMA-Factory
+2. Train the VLM, for example using LLaMA-Factory
 
 To train the policy on CALVIN, follow the steps below:
 1. Build the policy dataset:
     ```bash
-    python $ITRAP_ROOT/iTRAP/datasets/calvin/calvin_policy_dataset_builder.py --dataset-path $ITRAP_ROOT/iTRAP/datasets/calvin/task_<split> --output-dir $ITRAP_ROOT/iTRAP/models/flower_vla_calvin/dataset/task_<split>
+    python $ITRAP_ROOT/iTRAP/datasets/calvin/calvin_policy_dataset_builder.py --dataset-path <calvin_dataset_path> --output-dir <policy_dataset_output_dir>
     ```
 2. Choose & download a pretrained policy from the [collection](https://huggingface.co/collections/mbreuss/flower-vla-67d60e95bf2990699fcef81f):
     ```bash
