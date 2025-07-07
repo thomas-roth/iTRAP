@@ -16,8 +16,8 @@ class CalvinDatasetBuilder(ABC):
     # don't touch
     CALVIN_GRIPPER_WIDTH_OPEN = 1.0
     CALVIN_GRIPPER_WIDTH_CLOSED = -1.0
-    AUTO_LANG_ANN_FOLDER = "lang_clip_ViTB32"
-    AUTO_VIS_LANG_ANN_FOLDER = "vis_<vis-encoder>_lang_CLIP_ViTB32"
+    AUTO_LANG_ANN_FOLDER = "lang_clip_resnet50"
+    AUTO_VIS_LANG_ANN_FOLDER = "vis_davit_lang_clip_resnet50"
 
 
     def __init__(self, dataset_path, traj_simplification_rdp_epsilon=0.01):

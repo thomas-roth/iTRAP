@@ -14,8 +14,10 @@ from tqdm import tqdm
 
 from calvin_dataset_builder import CalvinDatasetBuilder
 
-sys.path.append(str(Path(__file__).absolute().parents[3]))
-from iTRAP.models.flower_vla_calvin.flower.models.flower import FLOWERVLA
+# add flower to path
+sys.path.append(str(Path(__file__).absolute().parents[2] / "models" / "flower_vla_calvin"))
+# add calvin_env to path
+sys.path.append(str(Path(__file__).absolute().parents[2] / "models" / "flower_vla_calvin" / "calvin_env"))
 
 
 class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
@@ -45,9 +47,10 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
 
         # load vision encoder
         # Create a temporary instance to access the _setup_vlm method
-        flower_cfg = hydra.compose(config_name="flower", config_path="../../models/flower_vla_calvin/conf")
-        temp_flower = hydra.utils.instantiate(flower_cfg)
-        self.vlm = temp_flower.vlm
+        with hydra.initialize(config_path="../../models/flower_vla_calvin/conf"):
+            flower_cfg = hydra.compose(config_name="config_calvin")
+            temp_flower = hydra.utils.instantiate(flower_cfg)
+        self.vlm = temp_flower.model.vlm
 
         self._logger.info(f"Initialized CalvinPolicyDatasetBuilder with vision encoder DaViT of Florence-2-large")
 
@@ -147,7 +150,8 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
             first_static_traj_img = traj_imgs_seq["rgb_static"][0] # don't use rgb_gripper imgs as they don't show the traj well
 
             # encode first static trajectory image
-            first_static_traj_img_embedded = self.vlm._encode_image(torch.tensor(first_static_traj_img)) # TODO: check shape, device & dtype
+            first_static_traj_img_tensor = torch.tensor(first_static_traj_img).permute(2, 0, 1).unsqueeze(0).float()
+            first_static_traj_img_embedded = self.vlm._encode_image(first_static_traj_img_tensor)
 
             auto_vis_lang_ann["vision"]["ann"].append(first_static_traj_img)
             auto_vis_lang_ann["vision"]["emb"].append(first_static_traj_img_embedded)
@@ -184,7 +188,7 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-path", type=str, default="/home/mbreuss/data/calvin_abc_rlds") # TODO: add rlds transformer
+    parser.add_argument("--dataset-path", type=str, default="/DATA/calvin/task_ABC_D")
     parser.add_argument("--output-dir", type=str, default="/home/troth/data/iTRAP-flower/calvin_policy_dataset")
     args = parser.parse_args()
 

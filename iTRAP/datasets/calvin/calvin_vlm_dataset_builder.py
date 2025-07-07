@@ -3,10 +3,15 @@ import datetime
 import os
 import logging
 import json
+from pathlib import Path
+import sys
 from PIL import Image
 from tqdm import tqdm
 
 from calvin_dataset_builder import CalvinDatasetBuilder
+
+# add calvin_env to path
+sys.path.append(str(Path(__file__).absolute().parents[2] / "models" / "flower_vla_calvin" / "calvin_env"))
 
 
 class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
@@ -134,8 +139,8 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-path", type=str, default="/home/troth/data/task_D_D")
-    parser.add_argument("--output-dir", type=str, default="/home/troth/bt/data/calvin_vlm_dataset")
+    parser.add_argument("--dataset-path", type=str, default="/DATA/calvin/task_ABC_D")
+    parser.add_argument("--output-dir", type=str, default="/home/troth/data/iTRAP-flower/calvin_vlm_dataset")
     args = parser.parse_args()
     
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
