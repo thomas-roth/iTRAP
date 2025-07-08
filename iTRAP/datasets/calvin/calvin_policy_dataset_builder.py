@@ -4,9 +4,7 @@ import os
 import shutil
 import sys
 import logging
-import hydra
 import cv2
-import torch
 import numpy as np
 from pathlib import Path
 from PIL import Image
@@ -14,8 +12,6 @@ from tqdm import tqdm
 
 from calvin_dataset_builder import CalvinDatasetBuilder
 
-# add flower to path
-sys.path.append(str(Path(__file__).absolute().parents[2] / "models" / "flower_vla_calvin"))
 # add calvin_env to path
 sys.path.append(str(Path(__file__).absolute().parents[2] / "models" / "flower_vla_calvin" / "calvin_env"))
 
@@ -45,14 +41,7 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
         self.save_first_img_per_seq = False
         self.save_gif_per_seq = False
 
-        # load vision encoder
-        # Create a temporary instance to access the _setup_vlm method
-        with hydra.initialize(config_path="../../models/flower_vla_calvin/conf"):
-            flower_cfg = hydra.compose(config_name="config_calvin")
-            temp_flower = hydra.utils.instantiate(flower_cfg)
-        self.vlm = temp_flower.model.vlm
-
-        self._logger.info(f"Initialized CalvinPolicyDatasetBuilder with vision encoder DaViT of Florence-2-large")
+        self._logger.info(f"Initialized CalvinPolicyDatasetBuilder")
 
 
     def _draw_trajectory_onto_img(self, img, gripper_centers, gripper_widths):
@@ -148,16 +137,12 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
         auto_vis_lang_ann = {"vision": {"ann": [], "emb": []}, "language": auto_lang_ann["language"], "info": auto_lang_ann["info"]}
         for traj_imgs_seq in tqdm(traj_imgs_all_seqs, total=len(traj_imgs_all_seqs), desc=f"Embedding trajectory images for {dataset_split} split"):
             first_static_traj_img = traj_imgs_seq["rgb_static"][0] # don't use rgb_gripper imgs as they don't show the traj well
-
-            # encode first static trajectory image
-            first_static_traj_img_tensor = torch.tensor(first_static_traj_img).permute(2, 0, 1).unsqueeze(0).float()
-            first_static_traj_img_embedded = self.vlm._encode_image(first_static_traj_img_tensor)
-
+            
+            # don't embed trajectory image as it is not used for training
+            
             auto_vis_lang_ann["vision"]["ann"].append(first_static_traj_img)
-            auto_vis_lang_ann["vision"]["emb"].append(first_static_traj_img_embedded)
         
         auto_vis_lang_ann["vision"]["ann"] = np.stack(auto_vis_lang_ann["vision"]["ann"])
-        auto_vis_lang_ann["vision"]["emb"] = torch.stack(auto_vis_lang_ann["vision"]["emb"]).detach().cpu().numpy()
         
         vis_lang_ann_output_dir = f"{self.output_dir}/{self.timestamp}/{self.AUTO_VIS_LANG_ANN_FOLDER}/{dataset_split}"
         os.makedirs(vis_lang_ann_output_dir, exist_ok=True)
