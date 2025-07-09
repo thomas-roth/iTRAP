@@ -9,6 +9,9 @@ from openai import OpenAI
 from termcolor import colored
 
 
+QWEN25VL_RESIZED_SIZE = 196
+
+
 
 def setup_vlm_client():
     client = OpenAI(api_key="0", base_url="http://localhost:8000/v1")
@@ -24,11 +27,12 @@ def query_vlm(static_img_start, vlm_client, task):
 
     # build prompt text
     prompt = f"<image.png>In the image, please execute the command described in <prompt>{task.replace('_', ' ')}</prompt>. " \
-            "Provide a sequence of points denoting the trajectory of a robot gripper to achieve the goal. " \
-            "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(0.252, 0.328), (0.327, 0.174), " \
-            "(0.139, 0.242), <action>Open Gripper</action>, (0.746, 0.218), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
-            "an x and y location of the end effector of the gripper in the image. The action tags indicate the gripper action. " \
-            "The coordinates should be floats ranging between 0 and 1, indicating the relative location of the points in the image."
+             "Provide a sequence of points denoting the trajectory of a robot gripper to achieve the goal. " \
+             "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(25, 32), (33, 18), " \
+             "(14, 24), <action>Open Gripper</action>, (20, 41), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
+             "an x and y location of the end effector of the gripper in the image. The action tags indicate the gripper action. " \
+             f"The coordinates should be integers ranging between 0 and {QWEN25VL_RESIZED_SIZE}, " \
+             "indicating the absolute location of the points in the image."
     
     # send request to vlm
     response = vlm_client.chat.completions.create(
@@ -82,7 +86,7 @@ def extract_gripper_points_and_actions(response, error_logger=None, stretch_fact
             x = float(match.group(1))
             y = float(match.group(2))
 
-            if i > 0:
+            if i > 0 and stretch_factor != 1.0:
                 x_start = gripper_points[0][0]
                 y_start = gripper_points[0][1]
 
@@ -144,8 +148,8 @@ def draw_trajectory_onto_image(img, gripper_points, gripper_actions, traj_color=
     assert img_copy.shape[0] == img_copy.shape[1]
     img_size = img_copy.shape[0]
 
-    scaled_gripper_points = [(int(x * img_size), int(y * img_size)) for (x, y) in gripper_points]
-    scaled_gripper_actions = [((int(x * img_size), int(y * img_size)), action) for ((x, y), action) in gripper_actions]
+    scaled_gripper_points = [(round(float(x) / QWEN25VL_RESIZED_SIZE * img_size), round(float(y) / QWEN25VL_RESIZED_SIZE * img_size)) for (x, y) in gripper_points]
+    scaled_gripper_actions = [((round(float(x) / QWEN25VL_RESIZED_SIZE * img_size), round(float(y) / QWEN25VL_RESIZED_SIZE * img_size)), action) for ((x, y), action) in gripper_actions]
 
     for i in range(len(scaled_gripper_points) - 1):
         if traj_color == "red":
