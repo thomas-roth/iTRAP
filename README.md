@@ -33,7 +33,7 @@ This repository contains the code and benchmarks for my Bachelor's thesis titled
  ┃ ┃ ┃ ┣ 📂preprocess           # Preprocessing for CALVIN to optimize GPU utilization for training
  ┃ ┃ ┃ ┣ 📂pretrained           # Pretrained models (non-existent at first)
  ┃ ┃ ┃ ┗ 📂pyhash-0.9.3         # Custom pyhash package (to mitigate version conflicts)
- ┃ ┃ ┣ 📂Qwen2-VL               # VLM of iTRAP
+ ┃ ┃ ┣ 📂Qwen2_5_VL             # VLM of iTRAP
  ┃ ┃ ┃ ┗ 📂pretrained           # Pretrained models (non-existent at first)
  ┣ 📂logs                       # Logs of training (non-existent at first)
  ┣ 📂outputs                    # Logs of evaluation (non-existent at first)
@@ -94,7 +94,7 @@ To train the policy on CALVIN, follow the steps below:
 4. Start the VLM server in a separate terminal (required during rollout):
     ```bash
     conda activate itrap
-    sh iTRAP/models/Qwen2-VL/start_vlm_server.sh
+    sh iTRAP/models/Qwen2_5_VL/start_vlm_server.sh
     ```
 5. Start the training:
     ```bash
@@ -105,7 +105,7 @@ To train the policy on CALVIN, follow the steps below:
 To evaluate the model, two terminal sessions need to be started. Start the VLM server in the first terminal:
 ```bash
 conda activate itrap
-sh iTRAP/models/Qwen2-VL/start_vlm_server.sh
+sh iTRAP/models/Qwen2_5_VL/start_vlm_server.sh
 ```
 Start the evaluation script in the second terminal:
 ```bash

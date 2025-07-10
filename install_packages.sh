@@ -36,6 +36,6 @@ pip install -r requirements.txt
 pip uninstall -y opencv-python # clashes with opencv-python-headless
 cd ..
 
-# Qwen2-VL
-echo "${GREEN}Installing Qwen2-VL (2/2)${NC}"
+# Qwen2.5-VL
+echo "${GREEN}Installing Qwen2.5-VL (2/2)${NC}"
 pip install vllm

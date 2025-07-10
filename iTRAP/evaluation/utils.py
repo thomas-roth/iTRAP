@@ -9,7 +9,7 @@ from openai import OpenAI
 from termcolor import colored
 
 
-QWEN25VL_RESIZED_SIZE = 196
+QWEN2_5_VL_RESIZED_SIZE = 196
 
 
 
@@ -31,12 +31,12 @@ def query_vlm(static_img_start, vlm_client, task):
              "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(25, 32), (33, 18), " \
              "(14, 24), <action>Open Gripper</action>, (20, 41), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
              "an x and y location of the end effector of the gripper in the image. The action tags indicate the gripper action. " \
-             f"The coordinates should be integers ranging between 0 and {QWEN25VL_RESIZED_SIZE}, " \
+             f"The coordinates should be integers ranging between 0 and {QWEN2_5_VL_RESIZED_SIZE}, " \
              "indicating the absolute location of the points in the image."
     
     # send request to vlm
     response = vlm_client.chat.completions.create(
-        model="qwen2-vl",
+        model="qwen2_5_vl",
         messages=[{
             "role": "user",
             "content": [
@@ -148,8 +148,8 @@ def draw_trajectory_onto_image(img, gripper_points, gripper_actions, traj_color=
     assert img_copy.shape[0] == img_copy.shape[1]
     img_size = img_copy.shape[0]
 
-    scaled_gripper_points = [(round(float(x) / QWEN25VL_RESIZED_SIZE * img_size), round(float(y) / QWEN25VL_RESIZED_SIZE * img_size)) for (x, y) in gripper_points]
-    scaled_gripper_actions = [((round(float(x) / QWEN25VL_RESIZED_SIZE * img_size), round(float(y) / QWEN25VL_RESIZED_SIZE * img_size)), action) for ((x, y), action) in gripper_actions]
+    scaled_gripper_points = [(round(float(x) / QWEN2_5_VL_RESIZED_SIZE * img_size), round(float(y) / QWEN2_5_VL_RESIZED_SIZE * img_size)) for (x, y) in gripper_points]
+    scaled_gripper_actions = [((round(float(x) / QWEN2_5_VL_RESIZED_SIZE * img_size), round(float(y) / QWEN2_5_VL_RESIZED_SIZE * img_size)), action) for ((x, y), action) in gripper_actions]
 
     for i in range(len(scaled_gripper_points) - 1):
         if traj_color == "red":

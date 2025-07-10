@@ -46,7 +46,7 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         traj_string_contents = []
         for (gripper_center, gripper_width) in zip(gripper_centers, gripper_widths):
             # resize gripper center to match image resizing of Qwen2.5-VL
-            normalized_gripper_center_x, normalized_gripper_center_y = self._convert_to_qwen25vl_format(gripper_center, static_img_size, static_img_size)
+            normalized_gripper_center_x, normalized_gripper_center_y = self._convert_to_qwen2_5_vl_format(gripper_center, static_img_size, static_img_size)
 
             traj_string_contents.append(f"({normalized_gripper_center_x}, {normalized_gripper_center_y})")
 
@@ -92,12 +92,12 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         return h_bar, w_bar
 
 
-    def _convert_to_qwen25vl_format(self, gripper_center, orig_height, orig_width, factor=28, min_pixels=56*56, max_pixels=14*14*4*1280):
+    def _convert_to_qwen2_5_vl_format(self, gripper_center, orig_height, orig_width, factor=28, min_pixels=56*56, max_pixels=14*14*4*1280):
         """From github.com/QwenLM/Qwen2.5-VL"""
         new_height, new_width = self._smart_resize(orig_height, orig_width, factor, min_pixels, max_pixels)
 
-        self._qwen25vl_resized_height = new_height
-        self._qwen25vl_resized_width = new_width
+        self._qwen2_5_vl_resized_height = new_height
+        self._qwen2_5_vl_resized_width = new_width
 
         scale_w = new_width / orig_width
         scale_h = new_height / orig_height
@@ -136,7 +136,7 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
                                 "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(25, 32), (33, 18), " \
                                 "(14, 24), <action>Open Gripper</action>, (20, 41), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
                                 "an x and y location of the end effector of the gripper in the image. The action tags indicate the gripper action. " \
-                                f"The coordinates should be integers ranging between 0 and {max(self._qwen25vl_resized_height, self._qwen25vl_resized_width)}, " \
+                                f"The coordinates should be integers ranging between 0 and {max(self._qwen2_5_vl_resized_height, self._qwen2_5_vl_resized_width)}, " \
                                 "indicating the absolute location of the points in the image.",
                     "role": "user"
                 },{
