@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageDraw
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -56,9 +56,24 @@ def build_and_save_trajectory_images(base_path, img, gripper_points_pred, grippe
     traj_img_pred = draw_trajectory_onto_image(np.array(img), gripper_points_pred, gripper_actions_pred, traj_color="green")
     traj_img_pred_label = draw_trajectory_onto_image(traj_img_pred, gripper_points_label, gripper_actions_label, traj_color="red")
 
+    traj_img_pred_label_pil = Image.fromarray(traj_img_pred_label).convert("RGBA")
+    
+    # overlay simple legend
+    img_size = traj_img_pred_label_pil.size[0]
+    assert img_size == traj_img_pred_label_pil.size[1], "Image not square"
+    alpha = 180
+    overlay = Image.new('RGBA', traj_img_pred_label_pil.size, (255, 255, 255, 0))
+    draw = ImageDraw.Draw(overlay)
+    draw.rectangle([3, img_size - 33, 88, img_size - 3], fill=(255, 255, 255, alpha), outline=(0, 0, 0, alpha))
+    draw.ellipse([6, img_size - 30, 16, img_size - 20], fill=(0, 255, 0, alpha))
+    draw.text((20, img_size - 31), "Prediction", fill=(0, 0, 0, alpha))
+    draw.ellipse([6, img_size - 16, 16, img_size - 6], fill=(255, 0, 0, alpha))
+    draw.text((20, img_size - 17), "Ground Truth", fill=(0, 0, 0, alpha))
+    traj_img_pred_label_pil = Image.alpha_composite(traj_img_pred_label_pil, overlay).convert("RGB")
+
     task = prompt.split("<prompt>")[1].split("</prompt>")[0].replace(" ", "_")
     os.makedirs(f"{base_path}/traj_imgs", exist_ok=True)
-    Image.fromarray(traj_img_pred_label).save(f"{base_path}/traj_imgs/{output_nr:03d}_{task}_{round(dtw_dist * 100 / img.size[0], 2)}.png")
+    traj_img_pred_label_pil.save(f"{base_path}/traj_imgs/{output_nr:03d}_{task}_{round(dtw_dist * 100 / img.size[0], 2)}.png")
 
 
 def plot_trajs_basic(gripper_points_pred, gripper_points_label):
@@ -115,4 +130,4 @@ def main(base_path: str, file_path: str, draw_trajectories=False):
 
 
 if __name__ == '__main__':
-    main(base_path="/home/troth/bt/data/vlm_val_predictions", file_path="vlm_generated_predictions.jsonl", draw_trajectories=True)
+    main(base_path="/home/troth/data/iTRAP-flower/vlm_val_predictions", file_path="generated_predictions.jsonl", draw_trajectories=True)

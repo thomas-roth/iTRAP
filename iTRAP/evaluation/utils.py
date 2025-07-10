@@ -56,7 +56,7 @@ def query_vlm(static_img_start, vlm_client, task):
     return response.choices[0].message.content
 
 
-def extract_gripper_points_and_actions(response, error_logger=None, stretch_factor=1.1):
+def extract_gripper_points_and_actions(response, error_logger=None, stretch_factor=1.0):
     regex_ans = r"<ans>(.*?)</ans>"
     regex_gripper_points = r"\(([0-9.]+),\s*([0-9.]+)\)"
     regex_gripper_actions = r"<action>(.*?)</action>"
@@ -83,8 +83,8 @@ def extract_gripper_points_and_actions(response, error_logger=None, stretch_fact
                     print(colored(f"Error: Invalid gripper point in response: {response_content}. Skipping match", "red"))
                 continue
 
-            x = float(match.group(1))
-            y = float(match.group(2))
+            x = int(match.group(1))
+            y = int(match.group(2))
 
             if i > 0 and stretch_factor != 1.0:
                 x_start = gripper_points[0][0]
