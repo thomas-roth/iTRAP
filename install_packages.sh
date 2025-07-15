@@ -34,6 +34,7 @@ pip install rdp
 pip install dtw-python
 pip install -r requirements.txt
 pip uninstall -y opencv-python # clashes with opencv-python-headless
+pip install numpy-quaternion # fix numpy version issues
 cd ..
 
 # Qwen2.5-VL
