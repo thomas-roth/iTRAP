@@ -39,4 +39,7 @@ cd ..
 
 # Qwen2.5-VL
 echo "${GREEN}Installing Qwen2.5-VL (2/2)${NC}"
+pip install --upgrade transformers>4.54.0
+pip uninstall numpy -y
+pip install numpy==1.26.4
 pip install vllm
