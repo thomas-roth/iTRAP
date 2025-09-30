@@ -24,8 +24,10 @@ from iTRAP.models.flower_vla_calvin.flower.rollout.rollout_video import RolloutV
 
 class ItrapEvaluator:
     def __init__(self):
+        flower_eval_cfg_override = sys.argv[1:] if len(sys.argv) > 1 else [] # override cfg with command line args (if using debugger)
+
         with hydra.initialize(config_path="../models/flower_vla_calvin/conf"):
-            self.flower_eval_cfg = hydra.compose(config_name="eval_calvin")
+            self.flower_eval_cfg = hydra.compose(config_name="eval_calvin", overrides=flower_eval_cfg_override)
             complete_calvin_cfg = hydra.compose(config_name="config_calvin")
         
         self.device = self.flower_eval_cfg.device
@@ -55,7 +57,8 @@ class ItrapEvaluator:
                 name=self.flower_eval_cfg.wandb.name,
                 entity=self.flower_eval_cfg.wandb.entity,
                 config=OmegaConf.to_object(self.flower_eval_cfg),
-                dir=self.output_dir
+                dir=self.output_dir,
+                reinit="create_new"
             )
 
         if self.flower_eval_cfg.record:
@@ -240,7 +243,8 @@ class ItrapEvaluator:
             task_info[f"subtask_{subtask_nr}"] = {"success": total_successes_counter[subtask_nr], "total": len(results)}
 
         self.logger.info(f"Average successful sequence length: {avg_seq_len:.1f}")
-        wandb.log({"avrg_performance/avg_seq_len": avg_seq_len, "avrg_performance/chain_sr": chain_sr, "detailed_metrics/task_info": task_info})
+        if self.flower_eval_cfg.wandb.log:
+            wandb.log({"avrg_performance/avg_seq_len": avg_seq_len, "avrg_performance/chain_sr": chain_sr, "detailed_metrics/task_info": task_info})
 
 
 if __name__ == "__main__":
