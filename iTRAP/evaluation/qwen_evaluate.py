@@ -20,39 +20,76 @@ def parse_vlm_outputs(file_path: str) -> list:
     return vlm_outputs
 
 
-def get_alignment_of_gripper_points(pred, label):
+def get_alignment_of_gripper_points(pred, label, img_size):
     gripper_points_pred, _ = extract_gripper_points_and_actions(pred)
     gripper_points_label, _ = extract_gripper_points_and_actions(label)
 
-    dtw_alignment = dtw(np.array(gripper_points_pred), np.array(gripper_points_label), keep_internals=True)
+    dtw_alignment = dtw(np.array(gripper_points_pred), np.array(gripper_points_label), keep_internals=True, dist_method=lambda p, l: np.linalg.norm(p - l))
+    gripper_points_dist = dtw_alignment.normalizedDistance  # cumulative pixel distance normalized by traj lengths
 
-    return dtw_alignment, gripper_points_pred, gripper_points_label
+    gripper_points_score = transform_dist_to_similarity_score(gripper_points_dist, img_size)
+
+    return gripper_points_score, gripper_points_pred, gripper_points_label
 
 
-def get_alignment_of_gripper_actions(pred, label):
+def get_alignment_of_gripper_actions(pred, label, img_size):
     _, gripper_actions_pred = extract_gripper_points_and_actions(pred)
     _, gripper_actions_label = extract_gripper_points_and_actions(label)
 
-    gripper_action_dists = []
-    same_gripper_actions = []
+    if len(gripper_actions_pred) == 0 or len(gripper_actions_label) == 0:
+        # no gripper actions in traj => no errors # FIXME: not ideal behavior
+        return 100, 100, gripper_actions_pred, gripper_actions_label
+
+    gripper_actions_cum_dist = 0
+    gripper_actions_same_action = []
     for gripper_action_pred, gripper_action_label in zip(gripper_actions_pred, gripper_actions_label):
-        # TODO: handle different lengths of gripper actions
+        # if lengths of gripper actions pred & label differ => zip automatically only takes elements until length of shorter list
         gripper_action_dist = np.linalg.norm(np.array(gripper_action_pred[0]) - np.array(gripper_action_label[0]))
-        gripper_action_dists.append(gripper_action_dist)
+        gripper_actions_cum_dist += gripper_action_dist
 
-        same_gripper_actions.append(gripper_action_pred[1] == gripper_action_label[1])
+        gripper_actions_same_action.append(gripper_action_pred[1] == gripper_action_label[1])
 
-    if len(gripper_action_dists) == 0:
-        # no gripper actions in trajectory => no errors
-        return 0, 100, gripper_actions_pred, gripper_actions_label
-    else:
-        avg_gripper_action_dist = np.mean(gripper_action_dists)
-        percent_same_gripper_action = np.mean(same_gripper_actions) * 100
+    gripper_actions_cum_dist = gripper_actions_cum_dist / (len(gripper_actions_pred) + len(gripper_actions_label)) # normalize the same as for normalizedDistance of DTW
+    gripper_actions_pos_score = transform_dist_to_similarity_score(gripper_actions_cum_dist, img_size)
 
-        return avg_gripper_action_dist, percent_same_gripper_action, gripper_actions_pred, gripper_actions_label
+    gripper_actions_type_score = np.mean(gripper_actions_same_action) * 100
+
+    return gripper_actions_pos_score, gripper_actions_type_score, gripper_actions_pred, gripper_actions_label
 
 
-def build_and_save_trajectory_images(base_path, img, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label, prompt, dtw_dist, output_nr):
+def transform_dist_to_similarity_score(dist, img_size):
+    max_dist = img_size / 2  # score 0 if distance half the image size
+    similarity_score = max(0, 100 * (1 - (dist / max_dist))) # clamped to [0, 100]
+    return similarity_score
+
+
+def plot_trajs_basic(index, gripper_points_pred, gripper_points_label, base_path):
+    pred_x = [point[0] for point in gripper_points_pred]
+    pred_y = [point[1] for point in gripper_points_pred]
+    label_x = [point[0] for point in gripper_points_label]
+    label_y = [point[1] for point in gripper_points_label]
+
+    plt.figure()
+    plt.plot(pred_x, pred_y, label="Prediction", color="green")
+    plt.plot(label_x, label_y, label="Label", color="red")
+    plt.legend()
+
+    ax = plt.gca()
+    ax.set_xlim(0, 200)
+    ax.set_ylim(0, 200)
+    ax.invert_yaxis()
+
+    plt.savefig(f"{base_path}/traj_imgs/trajs-{index:04d}_basic.png")
+
+
+def plot_trajs_dtw(index, dtw_alignment, base_path):
+    # TODO: dtw plot expects arrays of shape (n,) but points & actions are both of shape (n, 2)
+    dtw_alignment.plot(xlab="Prediction", ylab="Label", type="twoway")
+    plt.title(f"DTW distance of {index}: {dtw_alignment.distance}")
+    plt.savefig(f"{base_path}/traj_imgs/index-{index:04d}_dtw.png")
+
+
+def build_and_save_trajectory_images(base_path, img, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label, prompt, total_score, output_nr):
     traj_img_pred = draw_trajectory_onto_image(np.array(img), gripper_points_pred, gripper_actions_pred, traj_color="green")
     traj_img_pred_label = draw_trajectory_onto_image(traj_img_pred, gripper_points_label, gripper_actions_label, traj_color="red")
 
@@ -73,29 +110,23 @@ def build_and_save_trajectory_images(base_path, img, gripper_points_pred, grippe
 
     task = prompt.split("<prompt>")[1].split("</prompt>")[0].replace(" ", "_")
     os.makedirs(f"{base_path}/traj_imgs", exist_ok=True)
-    traj_img_pred_label_pil.save(f"{base_path}/traj_imgs/{output_nr:03d}_{task}_{round(dtw_dist * 100 / img.size[0], 2)}.png")
+    traj_img_pred_label_pil.save(f"{base_path}/traj_imgs/total-score-{round(total_score, 2)}_index-{output_nr:04d}_{task.replace('_', '-')}.png")
 
 
-def plot_trajs_basic(gripper_points_pred, gripper_points_label):
-    pred_x = [point[0] for point in gripper_points_pred]
-    pred_y = [point[1] for point in gripper_points_pred]
-    label_x = [point[0] for point in gripper_points_label]
-    label_y = [point[1] for point in gripper_points_label]
+def print_results(gripper_points_pos_scores, gripper_actions_scores_pos, gripper_actions_scores_type, total_scores, base_path):
+    avg_gripper_points_pos_score = np.mean(gripper_points_pos_scores)
+    avg_gripper_actions_score_pos = np.mean(gripper_actions_scores_pos)
+    avg_gripper_actions_score_type = np.mean(gripper_actions_scores_type)
+    avg_total_score = np.mean(total_scores)
 
-    plt.plot(pred_x, pred_y, label="Prediction")
-    plt.plot(label_x, label_y, label="Label")
-    plt.legend()
-    plt.show()
+    results = f"Average gripper points position score: {round(avg_gripper_points_pos_score, 2)} (average 0-100 score for pixel distance between pred & label gripper points normalized to traj lengths)\n" \
+        + f"Average gripper actions position score: {round(avg_gripper_actions_score_pos, 2)} (average 0-100 score for pixel distance between pred & label gripper actions normalized to traj lengths)\n" \
+        + f"Average gripper actions type score: {round(avg_gripper_actions_score_type, 2)} (average percentage of matching action types between pred & label gripper actions)\n" \
+        + f"Average total score: {round(avg_total_score, 2)} (unweighted average of the three sub-scores above)"
 
-
-def print_results(gripper_points_dists, avg_gripper_action_dists, percent_same_gripper_actions, img_size):
-    avg_gripper_points_dist = round(np.mean(gripper_points_dists) * 10000 / img_size, 2)
-    avg_gripper_action_dist = round(np.mean(avg_gripper_action_dists) * 10000 / img_size, 2)
-    avg_per_cent_same_gripper_action = round(np.mean(percent_same_gripper_actions), 2)
-
-    print(f"Average distance between gripper points: {avg_gripper_points_dist} % of image size") # FIXME: seems wrong
-    print(f"Average distance between gripper actions: {avg_gripper_action_dist} % of image size") # FIXME: seems wrong
-    print(f"Average percentage of same gripper actions: {avg_per_cent_same_gripper_action} %") # FIXME?
+    print(results)
+    with open(f"{base_path}/evaluation_results.txt", "w") as f:
+        f.write(results)
 
 
 def main(base_path: str, file_path: str, draw_trajectories=False):
@@ -105,28 +136,27 @@ def main(base_path: str, file_path: str, draw_trajectories=False):
     assert first_img.size[0] == first_img.size[1]
     img_size = first_img.size[0]
     
-    gripper_points_dists = []
-    avg_gripper_action_dists = []
-    percent_same_gripper_actions = []
+    gripper_points_pos_scores = []
+    gripper_actions_pos_scores = []
+    gripper_actions_type_scores = []
+    total_scores = []
     for i, vlm_output in tqdm(enumerate(vlm_outputs), total=len(vlm_outputs), desc="Evaluating VLM outputs"):
-        dtw_alignment, gripper_points_pred, gripper_points_label = get_alignment_of_gripper_points(vlm_output["predict"], vlm_output["label"])
-        gripper_points_dists.append(dtw_alignment.distance)
+        gripper_points_pos_score, gripper_points_pred, gripper_points_label = get_alignment_of_gripper_points(vlm_output["predict"], vlm_output["label"], img_size)
+        gripper_points_pos_scores.append(gripper_points_pos_score)
 
-        #plot_trajs_basic(gripper_points_predict, gripper_points_label)
-        
-        #dtw_alignment.plot(type="threeway")
-        #plt.show()
+        gripper_actions_pos_score, gripper_actions_type_score, gripper_actions_pred, gripper_actions_label = get_alignment_of_gripper_actions(vlm_output["predict"], vlm_output["label"], img_size)
+        gripper_actions_pos_scores.append(gripper_actions_pos_score)
+        gripper_actions_type_scores.append(gripper_actions_type_score)
 
-        avg_gripper_action_dist, percent_same_gripper_action, gripper_actions_pred, gripper_actions_label = get_alignment_of_gripper_actions(vlm_output["predict"], vlm_output["label"])
-        avg_gripper_action_dists.append(avg_gripper_action_dist)
-        percent_same_gripper_actions.append(percent_same_gripper_action)
-        
+        total_score = (gripper_points_pos_score + gripper_actions_pos_score + gripper_actions_type_score) / 3
+        total_scores.append(total_score)
+
         if draw_trajectories:
             img = Image.open(vlm_output['image'][0])
             build_and_save_trajectory_images(base_path, img, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label,
-                                             vlm_output["prompt"], dtw_alignment.distance, output_nr=i)
+                                             vlm_output["prompt"], total_score, output_nr=i)
     
-    print_results(gripper_points_dists, avg_gripper_action_dists, percent_same_gripper_actions, img_size)
+    print_results(gripper_points_pos_scores, gripper_actions_pos_scores, gripper_actions_type_scores, total_scores, base_path)
 
 
 if __name__ == '__main__':
