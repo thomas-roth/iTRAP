@@ -4,4 +4,5 @@
 pretrained
 
 .vscode
+.github
 __pycache__
