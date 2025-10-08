@@ -132,7 +132,7 @@ class ItrapEvaluator:
         self.env.reset(robot_obs=robot_obs, scene_obs=scene_obs)
 
         if self.flower_eval_cfg.record:
-            tag = f"lh-eval_seq-nr-{seq_nr:03d}_global-step"
+            tag = f"lh-eval_seq-nr-{seq_nr:03d}"
             caption = " | ".join(eval_sequence)
             self.rollout_video.new_video(tag, caption)
 
@@ -141,7 +141,7 @@ class ItrapEvaluator:
             if self.flower_eval_cfg.record:
                 self.rollout_video.new_subtask()
             
-            success = self.rollout_subtask(subtask, seq_nr, subtask_nr)
+            success = self.rollout_subtask(seq_nr, subtask_nr, subtask)
 
             if self.flower_eval_cfg.record:
                 self.rollout_video.draw_outcome(success)
@@ -154,7 +154,7 @@ class ItrapEvaluator:
         return success_counter
     
 
-    def rollout_subtask(self, subtask, seq_nr, subtask_nr):
+    def rollout_subtask(self, seq_nr, subtask_nr, subtask):
         obs = self.env.get_obs()
 
         goal = self.lang_embeddings.get_lang_goal(subtask)
@@ -249,7 +249,7 @@ class ItrapEvaluator:
 
 if __name__ == "__main__":
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
     itrap_evaluator = ItrapEvaluator()
     itrap_evaluator.evaluate_itrap()
