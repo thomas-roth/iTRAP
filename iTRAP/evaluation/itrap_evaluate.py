@@ -51,7 +51,7 @@ class ItrapEvaluator:
         self.logger.addHandler(_file_handler)
 
         if self.flower_eval_cfg.wandb.log:
-            wandb.init(
+            self.wandb_run = wandb.init(
                 project=self.flower_eval_cfg.wandb.project,
                 group=self.flower_eval_cfg.wandb.group,
                 name=self.flower_eval_cfg.wandb.name,
@@ -60,6 +60,8 @@ class ItrapEvaluator:
                 dir=self.output_dir,
                 reinit="create_new"
             )
+            if self.wandb_run is None:
+                raise RuntimeError("Failed to initialize wandb run")
 
         if self.flower_eval_cfg.record:
             self.rollout_video = RolloutVideo(
@@ -244,7 +246,7 @@ class ItrapEvaluator:
 
         self.logger.info(f"Average successful sequence length: {avg_seq_len:.1f}")
         if self.flower_eval_cfg.wandb.log:
-            wandb.log({"avrg_performance/avg_seq_len": avg_seq_len, "avrg_performance/chain_sr": chain_sr, "detailed_metrics/task_info": task_info})
+            self.wandb_run.log({"avrg_performance/avg_seq_len": avg_seq_len, "avrg_performance/chain_sr": chain_sr, "detailed_metrics/task_info": task_info})
 
 
 if __name__ == "__main__":
