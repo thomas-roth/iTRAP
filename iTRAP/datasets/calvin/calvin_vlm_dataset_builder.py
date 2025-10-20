@@ -11,6 +11,9 @@ from tqdm import tqdm
 
 from calvin_dataset_builder import CalvinDatasetBuilder
 
+sys.path.append(str(Path(__file__).absolute().parents[2])) # Add repo root to path
+from iTRAP.models.Qwen2_5_VL.resize_utils import resize_image_for_qwen2_5_vl, resize_point_for_qwen2_5_vl
+
 # add calvin_env to path
 sys.path.append(str(Path(__file__).absolute().parents[2] / "models" / "flower_vla_calvin" / "calvin_env"))
 
@@ -46,7 +49,7 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         traj_string_contents = []
         for (gripper_center, gripper_width) in zip(gripper_centers, gripper_widths):
             # resize gripper center to match image resizing of Qwen2.5-VL
-            normalized_gripper_center_x, normalized_gripper_center_y = self._convert_to_qwen2_5_vl_format(gripper_center, static_img_size, static_img_size)
+            normalized_gripper_center_x, normalized_gripper_center_y = resize_point_for_qwen2_5_vl(gripper_center, static_img_size, static_img_size)
 
             traj_string_contents.append(f"({normalized_gripper_center_x}, {normalized_gripper_center_y})")
 
@@ -66,52 +69,6 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         return {"traj_string_seq": traj_string_seq, "start_imgs_seq": start_imgs_seq}
 
 
-    def _smart_resize(self, height: int, width: int, factor: int = 28, min_pixels: int = 56 * 56, max_pixels: int = 14 * 14 * 4 * 1280):
-        """From github.com/QwenLM/Qwen2.5-VL
-        Rescales the image so that the following conditions are met:
-        1. Both dimensions (height and width) are divisible by 'factor'.
-        2. The total number of pixels is within the range ['min_pixels', 'max_pixels'].
-        3. The aspect ratio of the image is maintained as closely as possible.
-        """
-        if height < factor or width < factor:
-            raise ValueError(f"height:{height} or width:{width} must be larger than factor:{factor}")
-        elif max(height, width) / min(height, width) > 200:
-            raise ValueError(
-                f"absolute aspect ratio must be smaller than 200, got {max(height, width) / min(height, width)}"
-            )
-        h_bar = round(height / factor) * factor
-        w_bar = round(width / factor) * factor
-        if h_bar * w_bar > max_pixels:
-            beta = math.sqrt((height * width) / max_pixels)
-            h_bar = math.floor(height / beta / factor) * factor
-            w_bar = math.floor(width / beta / factor) * factor
-        elif h_bar * w_bar < min_pixels:
-            beta = math.sqrt(min_pixels / (height * width))
-            h_bar = math.ceil(height * beta / factor) * factor
-            w_bar = math.ceil(width * beta / factor) * factor
-        return h_bar, w_bar
-
-
-    def _convert_to_qwen2_5_vl_format(self, gripper_center, orig_height, orig_width, factor=28, min_pixels=56*56, max_pixels=14*14*4*1280):
-        """From github.com/QwenLM/Qwen2.5-VL"""
-        new_height, new_width = self._smart_resize(orig_height, orig_width, factor, min_pixels, max_pixels)
-
-        self._qwen2_5_vl_resized_height = new_height
-        self._qwen2_5_vl_resized_width = new_width
-
-        scale_w = new_width / orig_width
-        scale_h = new_height / orig_height
-        
-        x, y = gripper_center
-        x_new = round(x * scale_w)
-        y_new = round(y * scale_h)
-
-        x_new = max(0, min(x_new, new_width - 1))
-        y_new = max(0, min(y_new, new_height - 1))
-        
-        return [x_new, y_new]
-    
-    
     def _save_trajectory_strings(self, task_all_seqs, task_text_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, dataset_split):
         assert len(task_all_seqs) == len(task_text_all_seqs), f"len(task_all_seqs) ({len(task_all_seqs)}) != len(task_text_all_seqs) ({len(task_text_all_seqs)})"
         assert len(task_all_seqs) == len(traj_strings_all_seqs), f"len(task_all_seqs) ({len(task_all_seqs)}) != len(traj_strings_all_seqs) ({len(traj_strings_all_seqs)})"
@@ -126,9 +83,11 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         for i, (task_seq, task_text_seq, traj_string_seq, start_imgs_seq) in tqdm(enumerate(zip(task_all_seqs, task_text_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs)),
                                                                                   total=len(task_all_seqs), desc=f"Building question-answer pairs for {dataset_split} split"):
             first_static_img = Image.fromarray(start_imgs_seq["rgb_static"]) # don't use gripper image as only tiny part of trajectory visible
+            first_static_img = resize_image_for_qwen2_5_vl(first_static_img)
             first_static_img_name = f"{i:0{num_digits}d}_{task_seq}_static.png"
             first_static_img.save(f"{dataset_path}/{first_static_img_name}")
 
+            max_resized_img_size = max(first_static_img.height, first_static_img.width)
             dataset_entry = {
                 "messages": [{
                     "content": f"<image>In the image, please execute the command described in <prompt>{task_text_seq}</prompt>. " \
@@ -136,7 +95,7 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
                                 "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(25, 32), (33, 18), " \
                                 "(14, 24), <action>Open Gripper</action>, (20, 41), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
                                 "an x and y location of the end effector of the gripper in the image. The action tags indicate the gripper action. " \
-                                f"The coordinates should be integers ranging between 0 and {max(self._qwen2_5_vl_resized_height, self._qwen2_5_vl_resized_width)}, " \
+                                f"The coordinates should be integers ranging between 0 and {max_resized_img_size}, " \
                                 "indicating the absolute location of the points in the image.",
                     "role": "user"
                 },{

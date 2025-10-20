@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -21,8 +22,8 @@ def parse_vlm_outputs(file_path: str) -> list:
 
 
 def get_alignment_of_gripper_points(pred, label, img_size):
-    gripper_points_pred, _ = extract_gripper_points_and_actions(pred)
-    gripper_points_label, _ = extract_gripper_points_and_actions(label)
+    gripper_points_pred, _ = extract_gripper_points_and_actions(pred, orig_img_height=img_size, orig_img_width=img_size)
+    gripper_points_label, _ = extract_gripper_points_and_actions(label, orig_img_height=img_size, orig_img_width=img_size)
 
     dtw_alignment = dtw(np.array(gripper_points_pred), np.array(gripper_points_label), keep_internals=True, dist_method=lambda p, l: np.linalg.norm(p - l))
     gripper_points_dist = dtw_alignment.normalizedDistance  # cumulative pixel distance normalized by traj lengths
@@ -33,8 +34,8 @@ def get_alignment_of_gripper_points(pred, label, img_size):
 
 
 def get_alignment_of_gripper_actions(pred, label, img_size):
-    _, gripper_actions_pred = extract_gripper_points_and_actions(pred)
-    _, gripper_actions_label = extract_gripper_points_and_actions(label)
+    _, gripper_actions_pred = extract_gripper_points_and_actions(pred, orig_img_height=img_size, orig_img_width=img_size)
+    _, gripper_actions_label = extract_gripper_points_and_actions(label, orig_img_height=img_size, orig_img_width=img_size)
 
     if len(gripper_actions_pred) == 0 or len(gripper_actions_label) == 0:
         # no gripper actions in traj => no errors # FIXME: not ideal behavior
@@ -89,7 +90,7 @@ def plot_trajs_dtw(index, dtw_alignment, base_path):
     plt.savefig(f"{base_path}/traj_imgs/index-{index:04d}_dtw.png")
 
 
-def build_and_save_trajectory_images(base_path, img, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label, prompt, total_score, output_nr):
+def build_and_save_trajectory_images(output_dir, img, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label, prompt, total_score, output_nr):
     traj_img_pred = draw_trajectory_onto_image(np.array(img), gripper_points_pred, gripper_actions_pred, traj_color="green")
     traj_img_pred_label = draw_trajectory_onto_image(traj_img_pred, gripper_points_label, gripper_actions_label, traj_color="red")
 
@@ -109,11 +110,11 @@ def build_and_save_trajectory_images(base_path, img, gripper_points_pred, grippe
     traj_img_pred_label_pil = Image.alpha_composite(traj_img_pred_label_pil, overlay).convert("RGB")
 
     task = prompt.split("<prompt>")[1].split("</prompt>")[0].replace(" ", "_")
-    os.makedirs(f"{base_path}/traj_imgs", exist_ok=True)
-    traj_img_pred_label_pil.save(f"{base_path}/traj_imgs/total-score-{round(total_score, 2)}_index-{output_nr:04d}_{task.replace('_', '-')}.png")
+    os.makedirs(f"{output_dir}/traj_imgs", exist_ok=True)
+    traj_img_pred_label_pil.save(f"{output_dir}/traj_imgs/total-score-{round(total_score, 2)}_index-{output_nr:04d}_{task.replace('_', '-')}.png")
 
 
-def print_results(gripper_points_pos_scores, gripper_actions_scores_pos, gripper_actions_scores_type, total_scores, base_path):
+def print_results(output_dir, gripper_points_pos_scores, gripper_actions_scores_pos, gripper_actions_scores_type, total_scores):
     avg_gripper_points_pos_score = np.mean(gripper_points_pos_scores)
     avg_gripper_actions_score_pos = np.mean(gripper_actions_scores_pos)
     avg_gripper_actions_score_type = np.mean(gripper_actions_scores_type)
@@ -125,12 +126,16 @@ def print_results(gripper_points_pos_scores, gripper_actions_scores_pos, gripper
         + f"Average total score: {round(avg_total_score, 2)} (unweighted average of the three sub-scores above)"
 
     print(results)
-    with open(f"{base_path}/evaluation_results.txt", "w") as f:
+
+    with open(f"{output_dir}/results.txt", "w") as f:
         f.write(results)
 
 
-def main(base_path: str, file_path: str, draw_trajectories=False):
-    vlm_outputs = parse_vlm_outputs(base_path + '/' + file_path)
+def main(gen_preds_path: str, draw_trajectories=False):
+    output_dir = Path(__file__).parents[2] / "outputs" / "qwen" / datetime.now().strftime("%Y-%m-%d") / datetime.now().strftime("%H-%M-%S")
+    os.makedirs(output_dir, exist_ok=False)
+
+    vlm_outputs = parse_vlm_outputs(gen_preds_path)
 
     first_img = Image.open(vlm_outputs[0]['image'][0])
     assert first_img.size[0] == first_img.size[1]
@@ -153,11 +158,11 @@ def main(base_path: str, file_path: str, draw_trajectories=False):
 
         if draw_trajectories:
             img = Image.open(vlm_output['image'][0])
-            build_and_save_trajectory_images(base_path, img, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label,
+            build_and_save_trajectory_images(output_dir, img, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label,
                                              vlm_output["prompt"], total_score, output_nr=i)
     
-    print_results(gripper_points_pos_scores, gripper_actions_pos_scores, gripper_actions_type_scores, total_scores, base_path)
+    print_results(output_dir, gripper_points_pos_scores, gripper_actions_pos_scores, gripper_actions_type_scores, total_scores)
 
 
 if __name__ == '__main__':
-    main(base_path="/home/troth/data/iTRAP-flower/vlm_val_predictions", file_path="generated_predictions.jsonl", draw_trajectories=True)
+    main(gen_preds_path="/home/troth/data/iTRAP-flower/vlm_val_predictions/generated_predictions.jsonl", draw_trajectories=True)

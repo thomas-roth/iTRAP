@@ -2,14 +2,16 @@ import base64
 import io
 import logging
 import os
+from pathlib import Path
 import re
+import sys
 from PIL import Image
 import cv2
 from openai import OpenAI
 from termcolor import colored
 
-
-QWEN2_5_VL_RESIZED_SIZE = 196
+sys.path.append(str(Path(__file__).absolute().parents[2])) # Add repo root to path
+from iTRAP.models.Qwen2_5_VL.resize_utils import resize_image_for_qwen2_5_vl, resize_point_back_to_original_for_qwen2_5_vl
 
 
 
@@ -20,18 +22,23 @@ def setup_vlm_client():
 
 
 def query_vlm(static_img_start, vlm_client, task):
+    # resize static image to Qwen2.5-VL input size
+    static_img_start = Image.fromarray(static_img_start)
+    static_img_start = resize_image_for_qwen2_5_vl(static_img_start)
+
     # get base64 encoded image of first frame of static camera
     img_bytes = io.BytesIO()
-    Image.fromarray(static_img_start).save(img_bytes, format="PNG")
+    static_img_start.save(img_bytes, format="PNG")
     base64_img = base64.b64encode(img_bytes.getvalue()).decode("utf-8")
 
     # build prompt text
+    max_resized_img_size = max(static_img_start.height, static_img_start.width)
     prompt = f"<image.png>In the image, please execute the command described in <prompt>{task.replace('_', ' ')}</prompt>. " \
              "Provide a sequence of points denoting the trajectory of a robot gripper to achieve the goal. " \
              "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(25, 32), (33, 18), " \
              "(14, 24), <action>Open Gripper</action>, (20, 41), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
              "an x and y location of the end effector of the gripper in the image. The action tags indicate the gripper action. " \
-             f"The coordinates should be integers ranging between 0 and {QWEN2_5_VL_RESIZED_SIZE}, " \
+             f"The coordinates should be integers ranging between 0 and {max_resized_img_size}, " \
              "indicating the absolute location of the points in the image."
     
     # send request to vlm
@@ -56,7 +63,7 @@ def query_vlm(static_img_start, vlm_client, task):
     return response.choices[0].message.content
 
 
-def extract_gripper_points_and_actions(response, error_logger=None, stretch_factor=1.0):
+def extract_gripper_points_and_actions(response, orig_img_height, orig_img_width, error_logger=None, stretch_factor=1.0):
     regex_ans = r"<ans>(.*?)</ans>"
     regex_gripper_points = r"\(([0-9.]+),\s*([0-9.]+)\)"
     regex_gripper_actions = r"<action>(.*?)</action>"
@@ -85,6 +92,9 @@ def extract_gripper_points_and_actions(response, error_logger=None, stretch_fact
 
             x = int(match.group(1))
             y = int(match.group(2))
+
+            # resize coords from Qwen2.5-VL input size to original size
+            x, y = resize_point_back_to_original_for_qwen2_5_vl((x, y), orig_img_height, orig_img_width)
 
             if i > 0 and stretch_factor != 1.0:
                 x_start = gripper_points[0][0]
@@ -148,8 +158,8 @@ def draw_trajectory_onto_image(img, gripper_points, gripper_actions, traj_color=
     assert img_copy.shape[0] == img_copy.shape[1]
     img_size = img_copy.shape[0]
 
-    scaled_gripper_points = [(round(float(x) / QWEN2_5_VL_RESIZED_SIZE * img_size), round(float(y) / QWEN2_5_VL_RESIZED_SIZE * img_size)) for (x, y) in gripper_points]
-    scaled_gripper_actions = [((round(float(x) / QWEN2_5_VL_RESIZED_SIZE * img_size), round(float(y) / QWEN2_5_VL_RESIZED_SIZE * img_size)), action) for ((x, y), action) in gripper_actions]
+    scaled_gripper_points = [resize_point_back_to_original_for_qwen2_5_vl(gripper_point, img_size, img_size) for gripper_point in gripper_points]
+    scaled_gripper_actions = [(resize_point_back_to_original_for_qwen2_5_vl(gripper_point, img_size, img_size), gripper_action) for (gripper_point, gripper_action) in gripper_actions]
 
     for i in range(len(scaled_gripper_points) - 1):
         if traj_color == "red":
