@@ -11,7 +11,7 @@ from openai import OpenAI
 from termcolor import colored
 
 sys.path.append(str(Path(__file__).absolute().parents[2])) # Add repo root to path
-from iTRAP.models.Qwen2_5_VL.resize_utils import resize_image_for_qwen2_5_vl, resize_point_back_to_original_for_qwen2_5_vl
+from iTRAP.models.Qwen3_VL.resize_utils import get_resize_dims_for_qwen3_vl, resize_point_back_to_original_for_qwen3_vl
 
 
 
@@ -22,17 +22,13 @@ def setup_vlm_client():
 
 
 def query_vlm(static_img_start, vlm_client, task):
-    # resize static image to Qwen2.5-VL input size
-    static_img_start = Image.fromarray(static_img_start)
-    static_img_start = resize_image_for_qwen2_5_vl(static_img_start)
-
     # get base64 encoded image of first frame of static camera
     img_bytes = io.BytesIO()
-    static_img_start.save(img_bytes, format="PNG")
+    Image.fromarray(static_img_start).save(img_bytes, format="PNG")
     base64_img = base64.b64encode(img_bytes.getvalue()).decode("utf-8")
 
     # build prompt text
-    max_resized_img_size = max(static_img_start.height, static_img_start.width)
+    max_resized_img_size = max(get_resize_dims_for_qwen3_vl(static_img_start.shape[0], static_img_start.shape[1]))
     prompt = f"<image.png>In the image, please execute the command described in <prompt>{task.replace('_', ' ')}</prompt>. " \
              "Provide a sequence of points denoting the trajectory of a robot gripper to achieve the goal. " \
              "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(25, 32), (33, 18), " \
@@ -43,7 +39,7 @@ def query_vlm(static_img_start, vlm_client, task):
     
     # send request to vlm
     response = vlm_client.chat.completions.create(
-        model="qwen2_5_vl",
+        model="qwen3_vl",
         messages=[{
             "role": "user",
             "content": [
@@ -93,8 +89,8 @@ def extract_gripper_points_and_actions(response, orig_img_height, orig_img_width
             x = int(match.group(1))
             y = int(match.group(2))
 
-            # resize coords from Qwen2.5-VL input size to original size
-            x, y = resize_point_back_to_original_for_qwen2_5_vl((x, y), orig_img_height, orig_img_width)
+            # resize coords from Qwen3-VL input size to original size
+            x, y = resize_point_back_to_original_for_qwen3_vl((x, y), orig_img_height, orig_img_width)
 
             if i > 0 and stretch_factor != 1.0:
                 x_start = gripper_points[0][0]
@@ -158,8 +154,8 @@ def draw_trajectory_onto_image(img, gripper_points, gripper_actions, traj_color=
     assert img_copy.shape[0] == img_copy.shape[1]
     img_size = img_copy.shape[0]
 
-    scaled_gripper_points = [resize_point_back_to_original_for_qwen2_5_vl(gripper_point, img_size, img_size) for gripper_point in gripper_points]
-    scaled_gripper_actions = [(resize_point_back_to_original_for_qwen2_5_vl(gripper_point, img_size, img_size), gripper_action) for (gripper_point, gripper_action) in gripper_actions]
+    scaled_gripper_points = [resize_point_back_to_original_for_qwen3_vl(gripper_point, img_size, img_size) for gripper_point in gripper_points]
+    scaled_gripper_actions = [(resize_point_back_to_original_for_qwen3_vl(gripper_point, img_size, img_size), gripper_action) for (gripper_point, gripper_action) in gripper_actions]
 
     for i in range(len(scaled_gripper_points) - 1):
         if traj_color == "red":

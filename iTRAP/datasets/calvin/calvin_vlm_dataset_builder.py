@@ -11,8 +11,8 @@ from tqdm import tqdm
 
 from calvin_dataset_builder import CalvinDatasetBuilder
 
-sys.path.append(str(Path(__file__).absolute().parents[2])) # Add repo root to path
-from iTRAP.models.Qwen2_5_VL.resize_utils import resize_image_for_qwen2_5_vl, resize_point_for_qwen2_5_vl
+sys.path.append(str(Path(__file__).absolute().parents[3])) # Add repo root to path
+from iTRAP.models.Qwen3_VL.resize_utils import get_resize_dims_for_qwen3_vl, resize_point_for_qwen3_vl
 
 # add calvin_env to path
 sys.path.append(str(Path(__file__).absolute().parents[2] / "models" / "flower_vla_calvin" / "calvin_env"))
@@ -48,8 +48,8 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         is_gripper_open = gripper_widths[0] == self.CALVIN_GRIPPER_WIDTH_OPEN
         traj_string_contents = []
         for (gripper_center, gripper_width) in zip(gripper_centers, gripper_widths):
-            # resize gripper center to match image resizing of Qwen2.5-VL
-            normalized_gripper_center_x, normalized_gripper_center_y = resize_point_for_qwen2_5_vl(gripper_center, static_img_size, static_img_size)
+            # resize gripper center to match image resizing of Qwen3-VL
+            normalized_gripper_center_x, normalized_gripper_center_y = resize_point_for_qwen3_vl(gripper_center, static_img_size, static_img_size)
 
             traj_string_contents.append(f"({normalized_gripper_center_x}, {normalized_gripper_center_y})")
 
@@ -83,11 +83,10 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         for i, (task_seq, task_text_seq, traj_string_seq, start_imgs_seq) in tqdm(enumerate(zip(task_all_seqs, task_text_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs)),
                                                                                   total=len(task_all_seqs), desc=f"Building question-answer pairs for {dataset_split} split"):
             first_static_img = Image.fromarray(start_imgs_seq["rgb_static"]) # don't use gripper image as only tiny part of trajectory visible
-            first_static_img = resize_image_for_qwen2_5_vl(first_static_img)
             first_static_img_name = f"{i:0{num_digits}d}_{task_seq}_static.png"
             first_static_img.save(f"{dataset_path}/{first_static_img_name}")
 
-            max_resized_img_size = max(first_static_img.height, first_static_img.width)
+            max_resized_img_size = max(get_resize_dims_for_qwen3_vl(first_static_img.height, first_static_img.width))
             dataset_entry = {
                 "messages": [{
                     "content": f"<image>In the image, please execute the command described in <prompt>{task_text_seq}</prompt>. " \

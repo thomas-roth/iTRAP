@@ -1,24 +1,14 @@
 from datetime import datetime
-import json
 import os
 from pathlib import Path
 from PIL import Image, ImageDraw
-import numpy as np
-import matplotlib.pyplot as plt
-from tqdm import tqdm
 from dtw import *
+from matplotlib import pyplot as plt
+import numpy as np
+from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).absolute().parents[2]))
-from iTRAP.evaluation.itrap_evaluate import draw_trajectory_onto_image, extract_gripper_points_and_actions
-
-
-def parse_vlm_outputs(file_path: str) -> list:
-    vlm_outputs = []
-    with open(file_path, 'r') as file:
-        for task in file:
-            task = json.loads(task)
-            vlm_outputs.append(task)
-    return vlm_outputs
+from iTRAP.evaluation.utils import draw_trajectory_onto_image, extract_gripper_points_and_actions, query_vlm, setup_vlm_client
 
 
 def get_alignment_of_gripper_points(pred, label, img_size):
@@ -64,33 +54,7 @@ def transform_dist_to_similarity_score(dist, img_size):
     return similarity_score
 
 
-def plot_trajs_basic(index, gripper_points_pred, gripper_points_label, base_path):
-    pred_x = [point[0] for point in gripper_points_pred]
-    pred_y = [point[1] for point in gripper_points_pred]
-    label_x = [point[0] for point in gripper_points_label]
-    label_y = [point[1] for point in gripper_points_label]
-
-    plt.figure()
-    plt.plot(pred_x, pred_y, label="Prediction", color="green")
-    plt.plot(label_x, label_y, label="Label", color="red")
-    plt.legend()
-
-    ax = plt.gca()
-    ax.set_xlim(0, 200)
-    ax.set_ylim(0, 200)
-    ax.invert_yaxis()
-
-    plt.savefig(f"{base_path}/traj_imgs/trajs-{index:04d}_basic.png")
-
-
-def plot_trajs_dtw(index, dtw_alignment, base_path):
-    # TODO: dtw plot expects arrays of shape (n,) but points & actions are both of shape (n, 2)
-    dtw_alignment.plot(xlab="Prediction", ylab="Label", type="twoway")
-    plt.title(f"DTW distance of {index}: {dtw_alignment.distance}")
-    plt.savefig(f"{base_path}/traj_imgs/index-{index:04d}_dtw.png")
-
-
-def build_and_save_trajectory_images(output_dir, img, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label, prompt, total_score, output_nr):
+def build_and_save_trajectory_images(output_dir, img, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label, task, total_score, output_nr):
     traj_img_pred = draw_trajectory_onto_image(np.array(img), gripper_points_pred, gripper_actions_pred, traj_color="green")
     traj_img_pred_label = draw_trajectory_onto_image(traj_img_pred, gripper_points_label, gripper_actions_label, traj_color="red")
 
@@ -109,7 +73,6 @@ def build_and_save_trajectory_images(output_dir, img, gripper_points_pred, gripp
     draw.text((20, img_size - 17), "Ground Truth", fill=(0, 0, 0, alpha))
     traj_img_pred_label_pil = Image.alpha_composite(traj_img_pred_label_pil, overlay).convert("RGB")
 
-    task = prompt.split("<prompt>")[1].split("</prompt>")[0].replace(" ", "_")
     os.makedirs(f"{output_dir}/traj_imgs", exist_ok=True)
     traj_img_pred_label_pil.save(f"{output_dir}/traj_imgs/total-score-{round(total_score, 2)}_index-{output_nr:04d}_{task.replace('_', '-')}.png")
 
@@ -131,34 +94,43 @@ def print_results(output_dir, gripper_points_pos_scores, gripper_actions_scores_
         f.write(results)
 
 
-def main(gen_preds_path: str, draw_trajectories=False):
+def main(eval_dataset_path: str, draw_trajectories=False):
     output_dir = Path(__file__).parents[2] / "outputs" / "qwen" / datetime.now().strftime("%Y-%m-%d") / datetime.now().strftime("%H-%M-%S")
     os.makedirs(output_dir, exist_ok=False)
 
-    vlm_outputs = parse_vlm_outputs(gen_preds_path)
+    vlm_client = setup_vlm_client()
 
-    if "image" in vlm_outputs[0]:
-        first_img = Image.open(vlm_outputs[0]['image'][0])
-    else:
-        dataset_val_imgs_dir = "/home/troth/data/iTRAP-flower/calvin_vlm_dataset/2025-10-20_16-24-18_qwen3_abc/validation"
-        dataset_val_imgs = sorted([
-            os.path.join(dataset_val_imgs_dir, f)
-            for f in os.listdir(dataset_val_imgs_dir)
-            if f.endswith(('.png', '.jpg', '.jpeg'))
-        ])
-        first_img = Image.open(dataset_val_imgs[0])
-    assert first_img.size[0] == first_img.size[1]
-    img_size = first_img.size[0]
+    dataset_val_imgs_dir = "/home/troth/data/iTRAP-flower/calvin_vlm_dataset/2025-10-20_16-24-18_qwen3_abc/validation"
+    dataset_val_imgs = sorted([
+        os.path.join(dataset_val_imgs_dir, f)
+        for f in os.listdir(dataset_val_imgs_dir)
+        if f.endswith(('.png', '.jpg', '.jpeg'))
+    ])
+
+    eval_dataset = open(eval_dataset_path, "r").readlines()
     
     gripper_points_pos_scores = []
     gripper_actions_pos_scores = []
     gripper_actions_type_scores = []
     total_scores = []
-    for i, vlm_output in tqdm(enumerate(vlm_outputs), total=len(vlm_outputs), desc="Evaluating VLM outputs"):
-        gripper_points_pos_score, gripper_points_pred, gripper_points_label = get_alignment_of_gripper_points(vlm_output["predict"], vlm_output["label"], img_size)
+    for i, (eval_ds_entry, img_path) in tqdm(enumerate(zip(eval_dataset, dataset_val_imgs)), total=len(dataset_val_imgs), desc="Evaluating VLM outputs"):
+        img_path = eval_ds_entry.images[0]
+        img = Image.open(img_path)
+        assert img.size[0] == img.size[1]
+        img_size = img.size[0]
+
+        task = img_path.split("_static.png")[0][5:]
+        task_ds = eval_ds_entry.split("<prompt>")[1].split("</prompt>")[0].replace(" ", "_")
+        assert task == task_ds, f"Task from image path ({task}) does not match task from dataset entry ({task_ds})"
+
+        vlm_output_predict = query_vlm(img, vlm_client, task)
+
+        vlm_output_label = eval_ds_entry.messages[1].content
+
+        gripper_points_pos_score, gripper_points_pred, gripper_points_label = get_alignment_of_gripper_points(vlm_output_predict, vlm_output_label, img_size)
         gripper_points_pos_scores.append(gripper_points_pos_score)
 
-        gripper_actions_pos_score, gripper_actions_type_score, gripper_actions_pred, gripper_actions_label = get_alignment_of_gripper_actions(vlm_output["predict"], vlm_output["label"], img_size)
+        gripper_actions_pos_score, gripper_actions_type_score, gripper_actions_pred, gripper_actions_label = get_alignment_of_gripper_actions(vlm_output_predict, vlm_output_label, img_size)
         gripper_actions_pos_scores.append(gripper_actions_pos_score)
         gripper_actions_type_scores.append(gripper_actions_type_score)
 
@@ -166,15 +138,11 @@ def main(gen_preds_path: str, draw_trajectories=False):
         total_scores.append(total_score)
 
         if draw_trajectories:
-            if "image" in vlm_output:
-                img = Image.open(vlm_output['image'][0])
-            else:
-                img = Image.open(dataset_val_imgs[i])
             build_and_save_trajectory_images(output_dir, img, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label,
-                                             vlm_output["prompt"], total_score, output_nr=i)
+                                             task, total_score, output_nr=i)
     
     print_results(output_dir, gripper_points_pos_scores, gripper_actions_pos_scores, gripper_actions_type_scores, total_scores)
 
 
 if __name__ == '__main__':
-    main(gen_preds_path="/home/troth/data/iTRAP-flower/vlm_val_predictions/qwen3_vl/generated_predictions.jsonl", draw_trajectories=True)
+    main(eval_dataset_path="/home/troth/data/iTRAP-flower/vlm_val_predictions/qwen3_vl/generated_predictions.jsonl", draw_trajectories=True)
