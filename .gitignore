@@ -1,8 +1,10 @@
-/outputs
+.env
+.github
+.vscode
+
+__pycache__/
+
 /logs
+/outputs
 
 pretrained
-
-.vscode
-.github
-__pycache__

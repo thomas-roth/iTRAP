@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 from PIL import Image, ImageDraw
+import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -90,8 +91,8 @@ def plot_trajs_dtw(index, dtw_alignment, base_path):
     plt.savefig(f"{base_path}/traj_imgs/index-{index:04d}_dtw.png")
 
 
-def build_and_save_trajectory_images(output_dir, img, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label, prompt, total_score, output_nr):
-    traj_img_pred = draw_trajectory_onto_image(np.array(img), gripper_points_pred, gripper_actions_pred, traj_color="green")
+def build_and_save_trajectory_images(output_dir, img_arr, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label, task, total_score, output_nr):
+    traj_img_pred = draw_trajectory_onto_image(img_arr, gripper_points_pred, gripper_actions_pred, traj_color="green")
     traj_img_pred_label = draw_trajectory_onto_image(traj_img_pred, gripper_points_label, gripper_actions_label, traj_color="red")
 
     traj_img_pred_label_pil = Image.fromarray(traj_img_pred_label).convert("RGBA")
@@ -109,7 +110,6 @@ def build_and_save_trajectory_images(output_dir, img, gripper_points_pred, gripp
     draw.text((20, img_size - 17), "Ground Truth", fill=(0, 0, 0, alpha))
     traj_img_pred_label_pil = Image.alpha_composite(traj_img_pred_label_pil, overlay).convert("RGB")
 
-    task = prompt.split("<prompt>")[1].split("</prompt>")[0].replace(" ", "_")
     os.makedirs(f"{output_dir}/traj_imgs", exist_ok=True)
     traj_img_pred_label_pil.save(f"{output_dir}/traj_imgs/total-score-{round(total_score, 2)}_index-{output_nr:04d}_{task.replace('_', '-')}.png")
 
@@ -167,14 +167,16 @@ def main(gen_preds_path: str, draw_trajectories=False):
 
         if draw_trajectories:
             if "image" in vlm_output:
-                img = Image.open(vlm_output['image'][0])
+                img_arr = cv2.imread(vlm_output['image'][0])
             else:
-                img = Image.open(dataset_val_imgs[i])
-            build_and_save_trajectory_images(output_dir, img, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label,
-                                             vlm_output["prompt"], total_score, output_nr=i)
+                img_arr = cv2.imread(dataset_val_imgs[i])
+            task = vlm_output["prompt"].split("<prompt>")[1].split("</prompt>")[0].replace(" ", "_")
+            build_and_save_trajectory_images(output_dir, img_arr, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label,
+                                             task, total_score, output_nr=i)
     
     print_results(output_dir, gripper_points_pos_scores, gripper_actions_pos_scores, gripper_actions_type_scores, total_scores)
 
 
 if __name__ == '__main__':
-    main(gen_preds_path="/home/troth/data/iTRAP-flower/vlm_val_predictions/qwen3_vl/generated_predictions.jsonl", draw_trajectories=True)
+    main(gen_preds_path="/home/troth/data/iTRAP-flower/vlm_val_predictions/qwen3_vl/generated_predictions.jsonl",
+         draw_trajectories=True)
