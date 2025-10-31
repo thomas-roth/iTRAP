@@ -131,7 +131,7 @@ def print_results(output_dir, gripper_points_pos_scores, gripper_actions_scores_
         f.write(results)
 
 
-def main(gen_preds_path: str, draw_trajectories=False):
+def main(gen_preds_path: str, val_imgs_dir: str, draw_trajectories=False):
     output_dir = Path(__file__).parents[2] / "outputs" / "qwen" / datetime.now().strftime("%Y-%m-%d") / datetime.now().strftime("%H-%M-%S")
     os.makedirs(output_dir, exist_ok=False)
 
@@ -140,10 +140,9 @@ def main(gen_preds_path: str, draw_trajectories=False):
     if "image" in vlm_outputs[0]:
         first_img = Image.open(vlm_outputs[0]['image'][0])
     else:
-        dataset_val_imgs_dir = "/home/troth/data/iTRAP-flower/calvin_vlm_dataset/2025-10-20_16-24-18_qwen3_abc/validation"
         dataset_val_imgs = sorted([
-            os.path.join(dataset_val_imgs_dir, f)
-            for f in os.listdir(dataset_val_imgs_dir)
+            os.path.join(val_imgs_dir, f)
+            for f in os.listdir(val_imgs_dir)
             if f.endswith(('.png', '.jpg', '.jpeg'))
         ])
         first_img = Image.open(dataset_val_imgs[0])
@@ -167,9 +166,9 @@ def main(gen_preds_path: str, draw_trajectories=False):
 
         if draw_trajectories:
             if "image" in vlm_output:
-                img_arr = cv2.imread(vlm_output['image'][0])
+                img_arr = cv2.cvtColor(cv2.imread(vlm_output['image'][0]), cv2.COLOR_BGR2RGB)
             else:
-                img_arr = cv2.imread(dataset_val_imgs[i])
+                img_arr = cv2.cvtColor(cv2.imread(dataset_val_imgs[i]), cv2.COLOR_BGR2RGB)
             task = vlm_output["prompt"].split("<prompt>")[1].split("</prompt>")[0].replace(" ", "_")
             build_and_save_trajectory_images(output_dir, img_arr, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label,
                                              task, total_score, output_nr=i)
@@ -179,4 +178,5 @@ def main(gen_preds_path: str, draw_trajectories=False):
 
 if __name__ == '__main__':
     main(gen_preds_path="/home/troth/data/iTRAP-flower/vlm_val_predictions/qwen3_vl/generated_predictions.jsonl",
+         val_imgs_dir="/home/troth/data/iTRAP-flower/calvin_vlm_dataset/2025-10-20_16-24-18_qwen3_abc/validation",
          draw_trajectories=True)

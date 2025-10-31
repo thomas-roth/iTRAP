@@ -18,14 +18,14 @@ def main(eval_dataset_path: str, val_imgs_dir: str, draw_trajectories=False):
 
     vlm_client = setup_vlm_client()
 
+    with open(eval_dataset_path, "r") as file:
+        eval_dataset = [json.loads(line) for line in file]
+
     dataset_val_imgs = sorted([
         os.path.join(val_imgs_dir, f)
         for f in os.listdir(val_imgs_dir)
         if f.endswith(('.png', '.jpg', '.jpeg'))
     ])
-
-    with open(eval_dataset_path, "r") as file:
-        eval_dataset = [json.loads(line) for line in file]
     
     gripper_points_pos_scores = []
     gripper_actions_pos_scores = []
