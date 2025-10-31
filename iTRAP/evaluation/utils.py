@@ -11,7 +11,8 @@ from openai import OpenAI
 from termcolor import colored
 
 sys.path.append(str(Path(__file__).absolute().parents[2])) # Add repo root to path
-from iTRAP.models.Qwen3_VL.resize_utils import get_resize_dims_for_qwen3_vl, resize_point_back_to_original_for_qwen3_vl
+from iTRAP.models.Qwen3_VL.resize_utils import resize_point_back_to_original_for_qwen3_vl
+from iTRAP.models.Qwen3_VL.utils import get_prompt
 
 
 
@@ -27,15 +28,7 @@ def query_vlm(static_img_start, vlm_client, task):
     Image.fromarray(static_img_start).save(img_bytes, format="PNG")
     base64_img = base64.b64encode(img_bytes.getvalue()).decode("utf-8")
 
-    # build prompt text
-    max_resized_img_size = max(get_resize_dims_for_qwen3_vl(static_img_start.shape[0], static_img_start.shape[1]))
-    prompt = f"<image.png>In the image, please execute the command described in <prompt>{task.replace('_', ' ')}</prompt>. " \
-             "Provide a sequence of points denoting the trajectory of a robot gripper to achieve the goal. " \
-             "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(25, 32), (33, 18), " \
-             "(14, 24), <action>Open Gripper</action>, (20, 41), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
-             "an x and y location of the end effector of the gripper in the image. The action tags indicate the gripper action. " \
-             f"The coordinates should be integers ranging between 0 and {max_resized_img_size}, " \
-             "indicating the absolute location of the points in the image."
+    prompt = get_prompt(task)
     
     # send request to vlm
     response = vlm_client.chat.completions.create(

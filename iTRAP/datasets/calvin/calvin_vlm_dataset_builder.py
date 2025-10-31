@@ -12,7 +12,8 @@ from tqdm import tqdm
 from calvin_dataset_builder import CalvinDatasetBuilder
 
 sys.path.append(str(Path(__file__).absolute().parents[3])) # Add repo root to path
-from iTRAP.models.Qwen3_VL.resize_utils import get_resize_dims_for_qwen3_vl, resize_point_for_qwen3_vl
+from iTRAP.models.Qwen3_VL.resize_utils import resize_point_for_qwen3_vl
+from iTRAP.models.Qwen3_VL.utils import get_prompt
 
 # add calvin_env to path
 sys.path.append(str(Path(__file__).absolute().parents[2] / "models" / "flower_vla_calvin" / "calvin_env"))
@@ -27,7 +28,7 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         self.output_dir = output_dir
         self.traj_string_coords_precision = traj_string_coords_precision # images are 200x200 & 84x84 => 1 pixel >= 0.005
 
-        os.makedirs(f"{self.output_dir}/{self.timestamp}", exist_ok=True)
+        os.makedirs(f"{self.output_dir}/{self.timestamp}", exist_ok=False)
 
         _file_handler = logging.FileHandler(f"{self.output_dir}/{self.timestamp}/build_dataset.log", mode='w')
         _file_handler.setLevel(logging.INFO)
@@ -86,16 +87,11 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
             first_static_img_name = f"{i:0{num_digits}d}_{task_seq}_static.png"
             first_static_img.save(f"{dataset_path}/{first_static_img_name}")
 
-            max_resized_img_size = max(get_resize_dims_for_qwen3_vl(first_static_img.height, first_static_img.width))
+            prompt = get_prompt(task_text_seq)
+
             dataset_entry = {
                 "messages": [{
-                    "content": f"<image>In the image, please execute the command described in <prompt>{task_text_seq}</prompt>. " \
-                                "Provide a sequence of points denoting the trajectory of a robot gripper to achieve the goal. " \
-                                "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(25, 32), (33, 18), " \
-                                "(14, 24), <action>Open Gripper</action>, (20, 41), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
-                                "an x and y location of the end effector of the gripper in the image. The action tags indicate the gripper action. " \
-                                f"The coordinates should be integers ranging between 0 and {max_resized_img_size}, " \
-                                "indicating the absolute location of the points in the image.",
+                    "content": prompt,
                     "role": "user"
                 },{
                     "content": traj_string_seq,
