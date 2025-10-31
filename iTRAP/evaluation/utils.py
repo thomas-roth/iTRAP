@@ -52,31 +52,31 @@ def query_vlm(static_img_start, vlm_client, task):
     return response.choices[0].message.content
 
 
-def extract_gripper_points_and_actions(response, orig_img_height, orig_img_width, error_logger=None, stretch_factor=1.0):
+def extract_gripper_points_and_actions(response, orig_img_height, orig_img_width, logger=None, stretch_factor=1.0):
     regex_ans = r"<ans>(.*?)</ans>"
+    regex_ans_no_end = r"<ans>(.*)"
     regex_gripper_points = r"\(([0-9.]+),\s*([0-9.]+)\)"
     regex_gripper_actions = r"<action>(.*?)</action>"
 
     try:
         response_content = re.search(regex_ans, response, re.DOTALL) # re.DOTALL to match newlines to broaden accepted response syntax
-        response_content = response_content.group(1)
 
-        # TODO: remove after testing VLM responses
-        tmp_stricter_response_content = re.search(r"^" + regex_ans + r"$", response, re.DOTALL)
-        if tmp_stricter_response_content is None:
-            if error_logger is not None:
-                error_logger.error(f"Invalid VLM response if strict: {response}")
-            else:
-                print(colored(f"Error: Invalid VLM response if strict: {response}", "red"))
+        if response_content is None:
+            _log_warning(logger, "No valid answer tags found in VLM response, trying to parse without closing </ans> tag")
+            
+            response_content = re.search(regex_ans_no_end, response, re.DOTALL)
+
+            if response_content is None:
+                _log_error(logger, f"Invalid VLM response: {response}. Skipping task")
+                return [], []
+
+        response_content = response_content.group(1)
 
         gripper_points = []
         for i, match in enumerate(re.finditer(regex_gripper_points, response_content)):
             if match is None:
                 # should not happen, but did happen once ):
-                if error_logger is not None:
-                    error_logger.error(f"Invalid gripper point in response: {response_content}. Skipping match")
-                else:
-                    print(colored(f"Error: Invalid gripper point in response: {response_content}. Skipping match", "red"))
+                _log_error(logger, f"Invalid gripper point in response: {response_content}. Skipping match")
                 continue
 
             x = int(match.group(1))
@@ -104,10 +104,7 @@ def extract_gripper_points_and_actions(response, orig_img_height, orig_img_width
         for match in re.finditer(regex_gripper_actions, response_content):
             if match is None:
                 # should not happen, but did happen once ):
-                if error_logger is not None:
-                    error_logger.error(f"Invalid gripper action in response: {response_content}. Skipping match")
-                else:
-                    print(colored(f"Error: Invalid gripper action in response: {response_content}. Skipping match", "red"))
+                _log_error(logger, f"Invalid gripper action in response: {response_content}. Skipping match")
                 continue
 
             action = match.group(1)
@@ -128,10 +125,7 @@ def extract_gripper_points_and_actions(response, orig_img_height, orig_img_width
             if prev_point_index >= 0:
                 points_before_gripper_actions.append((gripper_points[prev_point_index], action))
     except Exception as e:
-        if error_logger is not None:
-            error_logger.error(f"Invalid VLM response: {response}. Error msg: {e}. Skipping task")
-        else:
-            print(colored(f"Error: Invalid VLM response: {response}. Error msg: {e}. Skipping task", "red"))
+        _log_error(logger, f"Invalid VLM response: {response}. Error msg: {e}. Skipping task")
         return [], []
 
     return gripper_points, points_before_gripper_actions
@@ -177,3 +171,17 @@ def save_trajectory_image(traj_img, task, local_rank, seq_nr, subtask_nr, step_n
     os.makedirs(traj_imgs_dir, exist_ok=True)
 
     Image.fromarray(traj_img).save(f"{traj_imgs_dir}/rank-{local_rank:01d}_seq-{seq_nr:03d}_task-{subtask_nr:01d}-{task}_step-{step_nr:03d}.png")
+
+
+def _log_error(logger, msg):
+    if logger is None:
+        print(colored(f"Error: {msg}", "red"))
+    else:
+        logger.error(msg)
+
+
+def _log_warning(logger, msg):
+    if logger is None:
+        print(colored(f"Warning: {msg}", "yellow"))
+    else:
+        logger.warning(msg)
