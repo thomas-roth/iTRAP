@@ -29,7 +29,7 @@ def query_vlm(static_img_start, vlm_client, task):
 
     # build prompt text
     max_resized_img_size = max(get_resize_dims_for_qwen3_vl(static_img_start.shape[0], static_img_start.shape[1]))
-    prompt = f"<image.png>In the image, please execute the command described in <prompt>{task}</prompt>. " \
+    prompt = f"<image.png>In the image, please execute the command described in <prompt>{task.replace('_', ' ')}</prompt>. " \
              "Provide a sequence of points denoting the trajectory of a robot gripper to achieve the goal. " \
              "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(25, 32), (33, 18), " \
              "(14, 24), <action>Open Gripper</action>, (20, 41), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \

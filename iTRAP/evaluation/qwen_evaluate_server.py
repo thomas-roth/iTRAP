@@ -37,9 +37,8 @@ def main(eval_dataset_path: str, val_imgs_dir: str, draw_trajectories=False):
         img_size = img_arr.shape[0]
 
         task = img_path.split("_static.png")[0].split("validation/")[1][5:]
-        task_text = eval_ds_entry["prompt"].split("<prompt>")[1].split("</prompt>")[0]
 
-        vlm_output_predict = query_vlm(img_arr, vlm_client, task_text)
+        vlm_output_predict = query_vlm(img_arr, vlm_client, task)
 
         vlm_output_label = eval_ds_entry["label"]
 

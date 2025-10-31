@@ -165,7 +165,7 @@ class ItrapEvaluator:
 
         # get trajectory points & actions from initial state of scene & robot (static camera image untransformed as render() used instead of get_obs())
         static_img_start = self.env.cameras[0].render()[0].squeeze()
-        vlm_response = query_vlm(static_img_start, self.vlm_client, goal["lang_text"])
+        vlm_response = query_vlm(static_img_start, self.vlm_client, subtask)
         traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response, static_img_start.shape[0], static_img_start.shape[1], error_logger=self.logger)
 
         if self.flower_eval_cfg.save_traj_imgs:
@@ -187,7 +187,7 @@ class ItrapEvaluator:
             if step == self.flower_eval_cfg.ep_len / 2:
                 # query vlm again to help robot out of wrong state
                 untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
-                vlm_response = query_vlm(untransformed_static_img, self.vlm_client, goal["lang_text"])
+                vlm_response = query_vlm(untransformed_static_img, self.vlm_client, subtask)
                 traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response, untransformed_static_img.shape[0], untransformed_static_img.shape[1], error_logger=self.logger)
 
                 if self.flower_eval_cfg.save_traj_imgs:
