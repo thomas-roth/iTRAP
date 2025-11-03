@@ -177,6 +177,6 @@ def main(gen_preds_path: str, val_imgs_dir: str, draw_trajectories=False):
 
 
 if __name__ == '__main__':
-    main(gen_preds_path="/home/troth/data/iTRAP-flower/vlm_val_predictions/qwen3_vl/generated_predictions.jsonl",
+    main(gen_preds_path="/home/troth/data/iTRAP-flower/vlm_val_predictions/qwen3_vl_img-1000/generated_predictions.jsonl",
          val_imgs_dir="/home/troth/data/iTRAP-flower/calvin_vlm_dataset/2025-10-20_16-24-18_qwen3_abc/validation",
          draw_trajectories=True)

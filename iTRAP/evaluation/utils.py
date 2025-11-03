@@ -82,7 +82,7 @@ def extract_gripper_points_and_actions(response, orig_img_height, orig_img_width
             x = int(match.group(1))
             y = int(match.group(2))
 
-            # resize coords from Qwen3-VL input size to original size
+            # resize coords from Qwen3-VL internal size to original size
             x, y = resize_point_back_to_original_for_qwen3_vl((x, y), orig_img_height, orig_img_width)
 
             if i > 0 and stretch_factor != 1.0:
@@ -138,23 +138,17 @@ def draw_trajectory_onto_image(img, gripper_points, gripper_actions, traj_color=
 
     img_copy = img.copy()
     
-    assert img_copy.shape[0] == img_copy.shape[1]
-    img_size = img_copy.shape[0]
-
-    scaled_gripper_points = [resize_point_back_to_original_for_qwen3_vl(gripper_point, img_size, img_size) for gripper_point in gripper_points]
-    scaled_gripper_actions = [(resize_point_back_to_original_for_qwen3_vl(gripper_point, img_size, img_size), gripper_action) for (gripper_point, gripper_action) in gripper_actions]
-
-    for i in range(len(scaled_gripper_points) - 1):
+    for i in range(len(gripper_points) - 1):
         if traj_color == "red":
-            color = (round((i+1) / len(scaled_gripper_points) * 255), 0, 0) # black to red over time
+            color = (round((i+1) / len(gripper_points) * 255), 0, 0) # black to red over time
         elif traj_color == "green":
-            color = (0, round((i+1) / len(scaled_gripper_points) * 255), 0) # black to green over time
+            color = (0, round((i+1) / len(gripper_points) * 255), 0) # black to green over time
         else:
-            color = (0, 0, round((i+1) / len(scaled_gripper_points) * 255)) # black to blue over time
+            color = (0, 0, round((i+1) / len(gripper_points) * 255)) # black to blue over time
         
-        cv2.line(img_copy, scaled_gripper_points[i], scaled_gripper_points[i+1], color, thickness)
+        cv2.line(img_copy, gripper_points[i], gripper_points[i+1], color, thickness)
     
-    for point, action in scaled_gripper_actions:
+    for point, action in gripper_actions:
         circle_outer_radius = 2 * thickness
         if action == "Close Gripper":
             # green circle
