@@ -1,16 +1,26 @@
 from peft import PeftModel
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from termcolor import colored
+from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 
 
 def convert_model_plus_checkpoint_to_model(base_model_path, checkpoint_path, save_path):
-    tokenizer = AutoTokenizer.from_pretrained(base_model_path)
-    base_model = AutoModelForCausalLM.from_pretrained(base_model_path)
+    print(colored("Loading base model and checkpoint", "blue"))
+    processor = AutoProcessor.from_pretrained(base_model_path)
+    base_model = Qwen3VLForConditionalGeneration.from_pretrained(
+        base_model_path,
+        torch_dtype="auto",
+        device_map="auto"
+    )
 
+    print(colored("Loading LoRA checkpoint", "blue"))
     lora_model = PeftModel.from_pretrained(base_model, checkpoint_path)
 
+    print(colored("Merging LoRA weights into base model", "blue"))
     merged_model = lora_model.merge_and_unload()
+
+    print(colored("Saving merged model and processor", "blue"))
     merged_model.save_pretrained(save_path, safe_serialization=True)
-    tokenizer.save_pretrained(save_path)
+    processor.save_pretrained(save_path)
 
 
 def get_prompt(task: str) -> str:
@@ -22,8 +32,8 @@ def get_prompt(task: str) -> str:
 
 
 if __name__ == "__main__":
-    base_model_path = "/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/qwen3_vl_8b-calvin_abc"
-    checkpoint_path = "/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/qwen3_vl_8b-calvin_abc/checkpoint-1400"
-    save_path = "/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/qwen3_vl_8b-calvin_abc/merged-1400"
+    base_model_path = "Qwen/Qwen3-VL-8B-Instruct"  # Use HuggingFace model path
+    checkpoint_path = "/DATA/troth/iTRAP/pretrained/qwen3_vl_8b-calvin_abc_img-1000/checkpoint-1400"
+    save_path = "/DATA/troth/iTRAP/pretrained/qwen3_vl_8b-calvin_abc_img-1000/merged-1400"
 
     convert_model_plus_checkpoint_to_model(base_model_path, checkpoint_path, save_path)
