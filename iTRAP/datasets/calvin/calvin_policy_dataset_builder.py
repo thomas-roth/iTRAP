@@ -134,15 +134,19 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
 
         # build auto_vis_lang_ann.npy (load auto_lang_ann and add vision annotations)
         auto_lang_ann = np.load(f"{self.dataset_path}/{dataset_split}/{self.AUTO_LANG_ANN_FOLDER}/auto_lang_ann.npy", allow_pickle=True).item()
-        auto_vis_lang_ann = {"vision": {"ann": [], "emb": []}, "language": auto_lang_ann["language"], "info": auto_lang_ann["info"]}
+        auto_vis_lang_ann = {"vision": {"ann": {"static": [], "gripper": []}, "emb": []}, "language": auto_lang_ann["language"], "info": auto_lang_ann["info"]}
         for traj_imgs_seq in tqdm(traj_imgs_all_seqs, total=len(traj_imgs_all_seqs), desc=f"Embedding trajectory images for {dataset_split} split"):
-            first_static_traj_img = traj_imgs_seq["rgb_static"][0] # don't use rgb_gripper imgs as they don't show the traj well
+            first_static_traj_img = traj_imgs_seq["rgb_static"][0]
+            first_gripper_traj_img = traj_imgs_seq["rgb_gripper"][0]
             
             # don't embed trajectory image as it is not used for training
             
-            auto_vis_lang_ann["vision"]["ann"].append(first_static_traj_img)
+            auto_vis_lang_ann["vision"]["ann"]["static"].append(first_static_traj_img)
+            auto_vis_lang_ann["vision"]["ann"]["gripper"].append(first_gripper_traj_img)
+
         
-        auto_vis_lang_ann["vision"]["ann"] = np.stack(auto_vis_lang_ann["vision"]["ann"])
+        auto_vis_lang_ann["vision"]["ann"]["static"] = np.stack(auto_vis_lang_ann["vision"]["ann"]["static"])
+        auto_vis_lang_ann["vision"]["ann"]["gripper"] = np.stack(auto_vis_lang_ann["vision"]["ann"]["gripper"])
         
         vis_lang_ann_output_dir = f"{self.output_dir}/{self.timestamp}/{self.AUTO_VIS_LANG_ANN_FOLDER}/{dataset_split}"
         os.makedirs(vis_lang_ann_output_dir, exist_ok=True)
