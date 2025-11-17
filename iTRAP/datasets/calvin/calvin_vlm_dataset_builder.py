@@ -83,9 +83,13 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         dataset_entries = []
         for i, (task_seq, task_text_seq, traj_string_seq, start_imgs_seq) in tqdm(enumerate(zip(task_all_seqs, task_text_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs)),
                                                                                   total=len(task_all_seqs), desc=f"Building question-answer pairs for {dataset_split} split"):
-            first_static_img = Image.fromarray(start_imgs_seq["rgb_static"]) # don't use gripper image as only tiny part of trajectory visible
+            first_static_img = Image.fromarray(start_imgs_seq["rgb_static"])
             first_static_img_name = f"{i:0{num_digits}d}_{task_seq}_static.png"
             first_static_img.save(f"{dataset_path}/{first_static_img_name}")
+
+            first_gripper_img = Image.fromarray(start_imgs_seq["rgb_gripper"])
+            first_gripper_img_name = f"{i:0{num_digits}d}_{task_seq}_gripper.png"
+            first_gripper_img.save(f"{dataset_path}/{first_gripper_img_name}")
 
             prompt = get_prompt(task_text_seq)
 
@@ -98,7 +102,8 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
                     "role": "assistant"
                 }],
                 "images": [
-                    first_static_img_name
+                    first_static_img_name,
+                    first_gripper_img_name
                 ]
             }
             dataset_entries.append(dataset_entry)
