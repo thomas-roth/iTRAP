@@ -15,7 +15,7 @@ import wandb
 
 sys.path.append(str(Path(__file__).absolute().parents[2]))
 sys.path.append(str(Path(__file__).absolute().parents[1] / "models" / "flower_vla_calvin"))
-from iTRAP.evaluation.utils import setup_vlm_client, query_vlm, extract_gripper_points_and_actions, draw_trajectory_onto_image, save_trajectory_image
+from iTRAP.models.Qwen3_VL.utils import setup_vlm_client, query_vlm, extract_gripper_points_and_actions, draw_trajectory_onto_image, save_trajectory_image
 from iTRAP.models.flower_vla_calvin.flower.evaluation.utils import get_default_mode_and_env, get_env_state_for_initial_condition
 from iTRAP.models.flower_vla_calvin.flower.evaluation.multistep_sequences import get_sequences
 from iTRAP.models.flower_vla_calvin.flower.rollout.rollout_video import RolloutVideo
@@ -76,10 +76,15 @@ class ItrapEvaluator:
 
         self.setup_policy()
         
-        val_transforms_cfg = complete_calvin_cfg.datamodule.transforms.val.rgb_static
-        self.val_transforms = []
-        for val_transform_cfg in val_transforms_cfg:
-            self.val_transforms.append(hydra.utils.instantiate(val_transform_cfg))
+        val_static_transforms_cfg = complete_calvin_cfg.datamodule.transforms.val.rgb_static
+        self.val_static_transforms = []
+        for val_transform_cfg in val_static_transforms_cfg:
+            self.val_static_transforms.append(hydra.utils.instantiate(val_transform_cfg))
+        
+        val_gripper_transforms_cfg = complete_calvin_cfg.datamodule.transforms.val.rgb_gripper
+        self.val_gripper_transforms = []
+        for val_transform_cfg in val_gripper_transforms_cfg:
+            self.val_gripper_transforms.append(hydra.utils.instantiate(val_transform_cfg))
         
         self.task_oracle = hydra.utils.instantiate(self.flower_eval_cfg.tasks)
 
@@ -165,7 +170,8 @@ class ItrapEvaluator:
 
         # get trajectory points & actions from initial state of scene & robot (static camera image untransformed as render() used instead of get_obs())
         static_img_start = self.env.cameras[0].render()[0].squeeze()
-        vlm_response = query_vlm(static_img_start, self.vlm_client, subtask)
+        gripper_img_start = self.env.cameras[1].render()[0].squeeze()
+        vlm_response = query_vlm(static_img_start, gripper_img_start, self.vlm_client, subtask)
         traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response, static_img_start.shape[0], static_img_start.shape[1],
                                                                                        logger=self.logger)
 
@@ -188,7 +194,8 @@ class ItrapEvaluator:
             if step == self.flower_eval_cfg.ep_len / 2:
                 # query vlm again to help robot out of wrong state
                 untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
-                vlm_response = query_vlm(untransformed_static_img, self.vlm_client, subtask)
+                untransformed_gripper_img = self.env.cameras[1].render()[0].squeeze()
+                vlm_response = query_vlm(untransformed_static_img, untransformed_gripper_img, self.vlm_client, subtask)
                 traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response, untransformed_static_img.shape[0],
                                                                                                untransformed_static_img.shape[1], logger=self.logger)
 
@@ -199,14 +206,20 @@ class ItrapEvaluator:
             if step % self.policy.multistep == 0:
                 # model predicts multistep actions per step => only draw trajectory once per multistep
                 untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
+                untransformed_gripper_img = self.env.cameras[1].render()[0].squeeze()
                 untransformed_static_traj_img = draw_trajectory_onto_image(untransformed_static_img, traj_gripper_points, traj_gripper_actions)
+                untransformed_gripper_traj_img = untransformed_gripper_img.copy() # TODO
 
-                # apply transforms to trajectory image
+                # apply transforms to trajectory images
                 transformed_static_traj_img = torch.tensor(untransformed_static_traj_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
-                for transform in self.val_transforms:
+                for transform in self.val_static_transforms:
                     transformed_static_traj_img = transform(transformed_static_traj_img)
+                transformed_gripper_traj_img = torch.tensor(untransformed_gripper_traj_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
+                for transform in self.val_gripper_transforms:
+                    transformed_gripper_traj_img = transform(transformed_gripper_traj_img)
                 
-                obs["vis_image"] = transformed_static_traj_img.unsqueeze(0)
+                obs["vis_image_static"] = transformed_static_traj_img.unsqueeze(0)
+                obs["vis_image_gripper"] = transformed_gripper_traj_img.unsqueeze(0)
 
             action = self.policy.step(obs, goal)
             obs, _, _, current_info = self.env.step(action)
@@ -253,7 +266,7 @@ class ItrapEvaluator:
 
 if __name__ == "__main__":
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
     itrap_evaluator = ItrapEvaluator()
     itrap_evaluator.evaluate_itrap()

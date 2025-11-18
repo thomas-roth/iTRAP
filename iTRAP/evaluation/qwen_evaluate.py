@@ -10,7 +10,7 @@ from tqdm import tqdm
 from dtw import *
 
 sys.path.append(str(Path(__file__).absolute().parents[2]))
-from iTRAP.evaluation.itrap_evaluate import draw_trajectory_onto_image, extract_gripper_points_and_actions
+from iTRAP.models.Qwen3_VL.utils import extract_gripper_points_and_actions, draw_trajectory_onto_image
 
 
 def parse_vlm_outputs(file_path: str) -> list:
@@ -138,26 +138,26 @@ def main(gen_preds_path: str, val_imgs_dir: str, draw_trajectories=False):
     vlm_outputs = parse_vlm_outputs(gen_preds_path)
 
     if "image" in vlm_outputs[0]:
-        first_img = Image.open(vlm_outputs[0]['image'][0])
+        first_static_img = Image.open(vlm_outputs[0]['image'][0])
     else:
-        dataset_val_imgs = sorted([
+        dataset_val_static_imgs = sorted([
             os.path.join(val_imgs_dir, f)
             for f in os.listdir(val_imgs_dir)
-            if f.endswith(('.png', '.jpg', '.jpeg'))
+            if f.endswith(('.png', '.jpg', '.jpeg')) and "static" in f
         ])
-        first_img = Image.open(dataset_val_imgs[0])
-    assert first_img.size[0] == first_img.size[1]
-    img_size = first_img.size[0]
+        first_static_img = Image.open(dataset_val_static_imgs[0])
+    assert first_static_img.size[0] == first_static_img.size[1]
+    static_img_size = first_static_img.size[0]
     
     gripper_points_pos_scores = []
     gripper_actions_pos_scores = []
     gripper_actions_type_scores = []
     total_scores = []
     for i, vlm_output in tqdm(enumerate(vlm_outputs), total=len(vlm_outputs), desc="Evaluating VLM outputs"):
-        gripper_points_pos_score, gripper_points_pred, gripper_points_label = get_alignment_of_gripper_points(vlm_output["predict"], vlm_output["label"], img_size)
+        gripper_points_pos_score, gripper_points_pred, gripper_points_label = get_alignment_of_gripper_points(vlm_output["predict"], vlm_output["label"], static_img_size)
         gripper_points_pos_scores.append(gripper_points_pos_score)
 
-        gripper_actions_pos_score, gripper_actions_type_score, gripper_actions_pred, gripper_actions_label = get_alignment_of_gripper_actions(vlm_output["predict"], vlm_output["label"], img_size)
+        gripper_actions_pos_score, gripper_actions_type_score, gripper_actions_pred, gripper_actions_label = get_alignment_of_gripper_actions(vlm_output["predict"], vlm_output["label"], static_img_size)
         gripper_actions_pos_scores.append(gripper_actions_pos_score)
         gripper_actions_type_scores.append(gripper_actions_type_score)
 
@@ -166,17 +166,17 @@ def main(gen_preds_path: str, val_imgs_dir: str, draw_trajectories=False):
 
         if draw_trajectories:
             if "image" in vlm_output:
-                img_arr = cv2.cvtColor(cv2.imread(vlm_output['image'][0]), cv2.COLOR_BGR2RGB)
+                static_img_arr = cv2.cvtColor(cv2.imread(vlm_output['image'][0]), cv2.COLOR_BGR2RGB)
             else:
-                img_arr = cv2.cvtColor(cv2.imread(dataset_val_imgs[i]), cv2.COLOR_BGR2RGB)
+                static_img_arr = cv2.cvtColor(cv2.imread(dataset_val_static_imgs[i]), cv2.COLOR_BGR2RGB)
             task = vlm_output["prompt"].split("<prompt>")[1].split("</prompt>")[0].replace(" ", "_")
-            build_and_save_trajectory_images(output_dir, img_arr, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label,
+            build_and_save_trajectory_images(output_dir, static_img_arr, gripper_points_pred, gripper_actions_pred, gripper_points_label, gripper_actions_label,
                                              task, total_score, output_nr=i)
     
     print_results(output_dir, gripper_points_pos_scores, gripper_actions_pos_scores, gripper_actions_type_scores, total_scores)
 
 
 if __name__ == '__main__':
-    main(gen_preds_path="/home/troth/data/iTRAP-flower/vlm_val_predictions/qwen3_vl_img-1000/generated_predictions.jsonl",
-         val_imgs_dir="/home/troth/data/iTRAP-flower/calvin_vlm_dataset/2025-10-20_16-24-18_qwen3_abc/validation",
+    main(gen_preds_path="/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/qwen3_vl_8b-calvin_abc-2025_11_17-both_cams/merged_best/generated_predictions.jsonl",
+         val_imgs_dir="/home/troth/data/iTRAP-flower/calvin_vlm_dataset/2025-11-17_21-08-09_qwen3_both-cams/validation",
          draw_trajectories=True)
