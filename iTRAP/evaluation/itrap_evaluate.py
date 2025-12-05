@@ -64,7 +64,14 @@ class ItrapEvaluator:
                 raise RuntimeError("Failed to initialize wandb run")
 
         if self.flower_eval_cfg.record:
-            self.rollout_video = RolloutVideo(
+            self.static_rollout_video = RolloutVideo(
+                logger=self.logger,
+                empty_cache=False,
+                log_to_file=True,
+                save_dir=self.output_dir / "rollout_videos",
+                resolution_scale=1,
+            )
+            self.gripper_rollout_video = RolloutVideo(
                 logger=self.logger,
                 empty_cache=False,
                 log_to_file=True,
@@ -126,7 +133,8 @@ class ItrapEvaluator:
             results.append(success_counter)
 
             if self.flower_eval_cfg.record:
-                self.rollout_video.log(self.policy_global_step)
+                self.static_rollout_video.log(self.policy_global_step)
+                self.gripper_rollout_video.log(self.policy_global_step)
         
         self.log_success_rate(results)
 
@@ -141,17 +149,20 @@ class ItrapEvaluator:
         if self.flower_eval_cfg.record:
             tag = f"lh-eval_seq-nr-{seq_nr:03d}"
             caption = " | ".join(eval_sequence)
-            self.rollout_video.new_video(tag, caption)
+            self.static_rollout_video.new_video(tag + "_static", caption)
+            self.gripper_rollout_video.new_video(tag + "_gripper", caption)
 
         success_counter = 0
         for subtask_nr, subtask in enumerate(eval_sequence):
             if self.flower_eval_cfg.record:
-                self.rollout_video.new_subtask()
+                self.static_rollout_video.new_subtask()
+                self.gripper_rollout_video.new_subtask()
             
             success = self.rollout_subtask(seq_nr, subtask_nr, subtask)
 
             if self.flower_eval_cfg.record:
-                self.rollout_video.draw_outcome(success)
+                self.static_rollout_video.draw_outcome(success)
+                self.gripper_rollout_video.draw_outcome(success)
 
             if success:
                 success_counter += 1
@@ -171,23 +182,33 @@ class ItrapEvaluator:
         # get trajectory points & actions from initial state of scene & robot (static camera image untransformed as render() used instead of get_obs())
         static_img_start = self.env.cameras[0].render()[0].squeeze()
         gripper_img_start = self.env.cameras[1].render()[0].squeeze()
-        vlm_response = query_vlm(static_img_start, gripper_img_start, self.vlm_client, subtask)
-        traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response, static_img_start.shape[0], static_img_start.shape[1],
-                                                                                       logger=self.logger)
+        vlm_responses = query_vlm(static_img_start, gripper_img_start, self.vlm_client, subtask)
+        static_traj_points, static_traj_actions = extract_gripper_points_and_actions(vlm_responses["static"], static_img_start.shape[0],
+                                                                                                     static_img_start.shape[1], logger=self.logger)
+        gripper_traj_points, gripper_traj_actions = extract_gripper_points_and_actions(vlm_responses["gripper"], gripper_img_start.shape[0],
+                                                                                                       gripper_img_start.shape[1], logger=self.logger)
 
         if self.flower_eval_cfg.save_traj_imgs:
-            untransformed_static_traj_img = draw_trajectory_onto_image(static_img_start, traj_gripper_points, traj_gripper_actions)
+            untransformed_static_traj_img = draw_trajectory_onto_image(static_img_start, static_traj_points, static_traj_actions)
             save_trajectory_image(untransformed_static_traj_img, subtask, local_rank, seq_nr, subtask_nr, step_nr=0, root_output_dir=self.output_dir)
+            untransformed_gripper_traj_img = draw_trajectory_onto_image(gripper_img_start, gripper_traj_points, gripper_traj_actions)
+            save_trajectory_image(untransformed_gripper_traj_img, subtask, local_rank, seq_nr, subtask_nr, step_nr=0, root_output_dir=self.output_dir)
 
         self.policy.reset()
         start_info = self.env.get_info()
 
         if self.flower_eval_cfg.record:
-            # update video with initial state
+            # update static cam video with initial state
             static_img = self.env.cameras[0].render()[0].squeeze()
-            static_traj_img = draw_trajectory_onto_image(static_img, traj_gripper_points, traj_gripper_actions)
+            static_traj_img = draw_trajectory_onto_image(static_img, static_traj_points, static_traj_actions)
             normalized_static_traj_img = static_traj_img / 127.5 - 1 # normalize to [-1, 1]
-            self.rollout_video.update(torch.tensor(normalized_static_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device)) # shape: B, F, C, H, W
+            self.static_rollout_video.update(torch.tensor(normalized_static_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device)) # shape: B, F, C, H, W
+
+            # update gripper cam video with initial state
+            gripper_img = self.env.cameras[1].render()[0].squeeze()
+            gripper_traj_img = draw_trajectory_onto_image(gripper_img, gripper_traj_points, gripper_traj_actions)
+            normalized_gripper_traj_img = gripper_traj_img / 127.5 - 1 # normalize to [-1, 1]
+            self.gripper_rollout_video.update(torch.tensor(normalized_gripper_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device)) # shape: B, F, C, H, W
 
         success = False
         for step in tqdm(range(self.flower_eval_cfg.ep_len), desc=f"Rolling out policy for task {subtask}", leave=False):
@@ -195,20 +216,24 @@ class ItrapEvaluator:
                 # query vlm again to help robot out of wrong state
                 untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
                 untransformed_gripper_img = self.env.cameras[1].render()[0].squeeze()
-                vlm_response = query_vlm(untransformed_static_img, untransformed_gripper_img, self.vlm_client, subtask)
-                traj_gripper_points, traj_gripper_actions = extract_gripper_points_and_actions(vlm_response, untransformed_static_img.shape[0],
-                                                                                               untransformed_static_img.shape[1], logger=self.logger)
+                vlm_responses = query_vlm(untransformed_static_img, untransformed_gripper_img, self.vlm_client, subtask)
+                static_traj_points, static_traj_actions = extract_gripper_points_and_actions(vlm_responses["static"], untransformed_static_img.shape[0],
+                                                                                                             untransformed_static_img.shape[1], logger=self.logger)
+                gripper_traj_points, gripper_traj_actions = extract_gripper_points_and_actions(vlm_responses["gripper"], untransformed_gripper_img.shape[0],
+                                                                                                               untransformed_gripper_img.shape[1], logger=self.logger)
 
                 if self.flower_eval_cfg.save_traj_imgs:
-                    untransformed_static_traj_img = draw_trajectory_onto_image(untransformed_static_img, traj_gripper_points, traj_gripper_actions)
+                    untransformed_static_traj_img = draw_trajectory_onto_image(untransformed_static_img, static_traj_points, static_traj_actions)
                     save_trajectory_image(untransformed_static_traj_img, subtask, local_rank, seq_nr, subtask_nr, step, self.output_dir)
+                    untransformed_gripper_traj_img = draw_trajectory_onto_image(untransformed_gripper_img, gripper_traj_points, gripper_traj_actions)
+                    save_trajectory_image(untransformed_gripper_traj_img, subtask, local_rank, seq_nr, subtask_nr, step, self.output_dir)
 
             if step % self.policy.multistep == 0:
                 # model predicts multistep actions per step => only draw trajectory once per multistep
                 untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
                 untransformed_gripper_img = self.env.cameras[1].render()[0].squeeze()
-                untransformed_static_traj_img = draw_trajectory_onto_image(untransformed_static_img, traj_gripper_points, traj_gripper_actions)
-                untransformed_gripper_traj_img = untransformed_gripper_img.copy() # TODO
+                untransformed_static_traj_img = draw_trajectory_onto_image(untransformed_static_img, static_traj_points, static_traj_actions)
+                untransformed_gripper_traj_img = draw_trajectory_onto_image(untransformed_gripper_img, gripper_traj_points, gripper_traj_actions)
 
                 # apply transforms to trajectory images
                 transformed_static_traj_img = torch.tensor(untransformed_static_traj_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
@@ -225,10 +250,17 @@ class ItrapEvaluator:
             obs, _, _, current_info = self.env.step(action)
 
             if self.flower_eval_cfg.record:
+                # update static cam video with current state
                 static_img = self.env.cameras[0].render()[0].squeeze()
-                static_traj_img = draw_trajectory_onto_image(static_img, traj_gripper_points, traj_gripper_actions)
+                static_traj_img = draw_trajectory_onto_image(static_img, static_traj_points, static_traj_actions)
                 normalized_static_traj_img = static_traj_img / 127.5 - 1 # normalize to [-1, 1]
-                self.rollout_video.update(torch.tensor(normalized_static_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device))
+                self.static_rollout_video.update(torch.tensor(normalized_static_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device))
+
+                # update gripper cam video with current state
+                gripper_img = self.env.cameras[1].render()[0].squeeze()
+                gripper_traj_img = draw_trajectory_onto_image(gripper_img, gripper_traj_points, gripper_traj_actions)
+                normalized_gripper_traj_img = gripper_traj_img / 127.5 - 1 # normalize to [-1, 1]
+                self.gripper_rollout_video.update(torch.tensor(normalized_gripper_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device))
 
             # check if current steps solves task
             current_task_info = self.task_oracle.get_task_info_for_set(start_info, current_info, {subtask})
@@ -237,7 +269,8 @@ class ItrapEvaluator:
                 break
 
         if self.flower_eval_cfg.record:
-            self.rollout_video.add_language_instruction(goal["lang_text"])
+            self.static_rollout_video.add_language_instruction(goal["lang_text"])
+            self.gripper_rollout_video.add_language_instruction(goal["lang_text"])
         
         return success
     

@@ -105,25 +105,33 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
                 first_gripper_img = Image.fromarray(start_imgs_seq["rgb_gripper"])
                 first_gripper_img.save(f"{dataset_path}/{first_gripper_img_name}")
 
-            prompt = get_prompt(task_text_seq)
-
-            dataset_entry = {
+            dataset_entry_static = {
                 "messages": [{
-                    "content": prompt,
+                    "content": get_prompt(task_text_seq, cam="static"),
                     "role": "user"
                 },{
                     "content": traj_strings_seq["rgb_static"],
                     "role": "assistant"
+                }],
+                "images": [
+                    first_static_img_name
+                ]
+            }
+            dataset_entries.append(dataset_entry_static)
+
+            dataset_entry_gripper = {
+                "messages": [{
+                    "content": get_prompt(task_text_seq, cam="gripper"),
+                    "role": "user"
                 },{
                     "content": traj_strings_seq["rgb_gripper"],
                     "role": "assistant"
                 }],
                 "images": [
-                    first_static_img_name,
                     first_gripper_img_name
                 ]
             }
-            dataset_entries.append(dataset_entry)
+            dataset_entries.append(dataset_entry_gripper)
 
         dataset_info = {
             "dataset": {

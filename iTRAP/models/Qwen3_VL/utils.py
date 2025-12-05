@@ -25,12 +25,15 @@ def setup_vlm_client():
     return client
 
 
-def get_prompt(task: str) -> str:
-    return f"<image><image>The images show two views of the same scene. In the images, please execute the command described in <prompt>{task.replace('_', ' ')}</prompt>. " \
+def get_prompt(task: str, cam: str) -> str:
+    if cam != "static" and cam != "gripper":
+        raise ValueError(f"Invalid cam type {cam} for prompt generation")
+    
+    return f"<image>The image shows the view from the {cam} camera of the scene. In the image, please execute the command described in <prompt>{task.replace('_', ' ')}</prompt>. " \
             "Provide a sequence of points denoting the trajectory of a robot gripper to achieve the goal. " \
             "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(x_1, y_1), (x_2, y_2), " \
             "(x_3, y_3), <action>Open Gripper</action>, (x_4, y_4), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
-            "an x and y location of the end effector of the gripper in the first image. The action tags indicate the gripper action."
+            "an x and y location of the end effector of the gripper in the image. The action tags indicate the gripper action."
 
 
 def query_vlm(static_img_start, gripper_img_start, vlm_client, task):
@@ -47,22 +50,38 @@ def query_vlm(static_img_start, gripper_img_start, vlm_client, task):
     Image.fromarray(gripper_img_start).save(img_buffer, format="PNG")
     base64_gripper_img = base64.b64encode(img_buffer.getvalue()).decode("utf-8")
 
-    prompt = get_prompt(task)
+    prompt_static = get_prompt(task, cam="static")
+    prompt_gripper = get_prompt(task, cam="gripper")
     
-    # send request to vlm
-    response = vlm_client.chat.completions.create(
+    # send requests to vlm
+    responses = {}
+    response_static = vlm_client.chat.completions.create(
         model="qwen3_vl",
         messages=[{
             "role": "user",
             "content": [
                 {
                     "type": "text",
-                    "text": prompt
+                    "text": prompt_static
                 },{
                     "type": "image_url",
                     "image_url": {
                         "url": f"data:image/png;base64,{base64_static_img}"
                     }
+                }
+            ]
+        }]
+    )
+    responses["static"] = response_static.choices[0].message.content
+
+    response_gripper = vlm_client.chat.completions.create(
+        model="qwen3_vl",
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": prompt_gripper
                 },{
                     "type": "image_url",
                     "image_url": {
@@ -72,8 +91,9 @@ def query_vlm(static_img_start, gripper_img_start, vlm_client, task):
             ]
         }]
     )
+    responses["gripper"] = response_gripper.choices[0].message.content
 
-    return response.choices[0].message.content
+    return responses
 
 
 def extract_gripper_points_and_actions(response, orig_img_height, orig_img_width, logger=None, stretch_factor=1.0):
@@ -160,14 +180,9 @@ def draw_trajectory_onto_image(img, gripper_points, gripper_actions, traj_color=
         # gripper_actions is then empty as well, error msg already printed in extract_gripper_points
         return img
         
-    if img.shape[0] == GRIPPER_IMG_SIZE and img.shape[1] == GRIPPER_IMG_SIZE:
-        # gripper image => transform gripper points from static cam space to gripper cam space
-
-        #TODO
-        pass
-    else:
-        # gripper points already in static cam space
-        assert img.shape[0] == STATIC_IMG_SIZE and img.shape[1] == STATIC_IMG_SIZE, f"Image size {img.shape[0]}x{img.shape[1]} not supported for drawing trajectory"
+    assert (img.shape[0] == STATIC_IMG_SIZE and img.shape[1] == STATIC_IMG_SIZE or
+            img.shape[0] == GRIPPER_IMG_SIZE and img.shape[1] == GRIPPER_IMG_SIZE), \
+            f"Image size {img.shape[0]}x{img.shape[1]} not supported for drawing trajectory"
     
     img_copy = img.copy()
 

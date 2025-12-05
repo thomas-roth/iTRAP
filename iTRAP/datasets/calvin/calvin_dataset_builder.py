@@ -115,6 +115,8 @@ class CalvinDatasetBuilder(ABC):
             elif traj_representations.keys() == {"traj_strings_seq", "start_imgs_seq"}:
                 traj_strings_all_seqs.append(traj_representations["traj_strings_seq"])
                 start_imgs_all_seqs.append(traj_representations["start_imgs_seq"])
+            else:
+                raise ValueError(f"Unexpected keys in traj_representations when building trajectories: {traj_representations.keys()}")
 
         self._logger.info(f"Built {i+1} trajectories for {dataset_split} split, average trajectory length: {round(np.mean(lengths_simplified_trajs), 2)}")
 
