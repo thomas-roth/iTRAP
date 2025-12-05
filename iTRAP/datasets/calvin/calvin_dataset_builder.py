@@ -112,8 +112,8 @@ class CalvinDatasetBuilder(ABC):
             traj_representations = self.build_trajectory_representation(simplified_gripper_centers_world, simplified_gripper_widths)
             if traj_representations.keys() == {"traj_imgs_seq"}:
                 traj_imgs_all_seqs.append(traj_representations["traj_imgs_seq"])
-            elif traj_representations.keys() == {"traj_string_seq", "start_imgs_seq"}:
-                traj_strings_all_seqs.append(traj_representations["traj_string_seq"])
+            elif traj_representations.keys() == {"traj_strings_seq", "start_imgs_seq"}:
+                traj_strings_all_seqs.append(traj_representations["traj_strings_seq"])
                 start_imgs_all_seqs.append(traj_representations["start_imgs_seq"])
 
         self._logger.info(f"Built {i+1} trajectories for {dataset_split} split, average trajectory length: {round(np.mean(lengths_simplified_trajs), 2)}")

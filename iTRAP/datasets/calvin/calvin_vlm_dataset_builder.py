@@ -21,12 +21,13 @@ sys.path.append(str(Path(__file__).absolute().parents[2] / "models" / "flower_vl
 
 class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
     def __init__(self, timestamp, dataset_path, output_dir,
-                 traj_simplification_rdp_epsilon=0.01, traj_string_coords_precision=3):
+                 traj_simplification_rdp_epsilon=0.01, traj_string_coords_precision=3, save_imgs=True):
         
         self.timestamp = timestamp
         super().__init__(dataset_path, traj_simplification_rdp_epsilon)
         self.output_dir = output_dir
         self.traj_string_coords_precision = traj_string_coords_precision # images are 200x200 & 84x84 => 1 pixel >= 0.005
+        self.save_imgs = save_imgs
 
         os.makedirs(f"{self.output_dir}/{self.timestamp}", exist_ok=False)
 
@@ -39,35 +40,46 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
 
 
     def build_trajectory_representation(self, gripper_centers_world, gripper_widths):
-        # project simplified trajectory to static image space & generate trajectory string
-
-        gripper_centers = self._project_gripper_centers_to_cam(gripper_centers_world, cam_id=0)
+        # project simplified trajectory to static & gripper image spaces & generate trajectory strings
 
         assert self.env.cameras[0].width == self.env.cameras[0].height
         static_img_size = self.env.cameras[0].width
+        assert self.env.cameras[1].width == self.env.cameras[1].height
+        gripper_img_size = self.env.cameras[1].width
+
+        gripper_centers_static = self._project_gripper_centers_to_cam(gripper_centers_world, cam_id=0)
+        gripper_centers_gripper = self._project_gripper_centers_to_cam(gripper_centers_world, cam_id=1)
 
         is_gripper_open = gripper_widths[0] == self.CALVIN_GRIPPER_WIDTH_OPEN
-        traj_string_contents = []
-        for (gripper_center, gripper_width) in zip(gripper_centers, gripper_widths):
+        traj_string_static_contents = []
+        traj_string_gripper_contents = []
+        for (gripper_center_static, gripper_center_gripper, gripper_width) in zip(gripper_centers_static, gripper_centers_gripper, gripper_widths):
             # resize gripper center to match image resizing of Qwen3-VL
-            normalized_gripper_center_x, normalized_gripper_center_y = resize_point_for_qwen3_vl(gripper_center, static_img_size, static_img_size)
+            normalized_gripper_center_static_x, normalized_gripper_center_static_y = resize_point_for_qwen3_vl(gripper_center_static, static_img_size, static_img_size)
+            normalized_gripper_center_gripper_x, normalized_gripper_center_gripper_y = resize_point_for_qwen3_vl(gripper_center_gripper, gripper_img_size, gripper_img_size)
 
-            traj_string_contents.append(f"({normalized_gripper_center_x}, {normalized_gripper_center_y})")
+            traj_string_static_contents.append(f"({normalized_gripper_center_static_x}, {normalized_gripper_center_static_y})")
+            traj_string_gripper_contents.append(f"({normalized_gripper_center_gripper_x}, {normalized_gripper_center_gripper_y})")
 
             if is_gripper_open and gripper_width == self.CALVIN_GRIPPER_WIDTH_CLOSED:
-                traj_string_contents.append("<action>Close Gripper</action>")
+                traj_string_static_contents.append("<action>Close Gripper</action>")
+                traj_string_gripper_contents.append("<action>Close Gripper</action>")
                 is_gripper_open = False
             elif not is_gripper_open and gripper_width == self.CALVIN_GRIPPER_WIDTH_OPEN:
-                traj_string_contents.append("<action>Open Gripper</action>")
+                traj_string_static_contents.append("<action>Open Gripper</action>")
+                traj_string_gripper_contents.append("<action>Open Gripper</action>")
                 is_gripper_open = True
 
-        traj_string_seq = "<ans>[" + str.join(", ", traj_string_contents) + "]</ans>"
+        traj_strings_seq = {
+            "rgb_static": "<ans>[" + str.join(", ", traj_string_static_contents) + "]</ans>",
+            "rgb_gripper": "<ans>[" + str.join(", ", traj_string_gripper_contents) + "]</ans>"
+        }
         start_imgs_seq = {
             "rgb_static": self.curr_seq["obs"]["rgb_static"][0],
             "rgb_gripper": self.curr_seq["obs"]["rgb_gripper"][0]
         }
 
-        return {"traj_string_seq": traj_string_seq, "start_imgs_seq": start_imgs_seq}
+        return {"traj_strings_seq": traj_strings_seq, "start_imgs_seq": start_imgs_seq}
 
 
     def _save_trajectory_strings(self, task_all_seqs, task_text_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs, dataset_split):
@@ -81,15 +93,17 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
         os.makedirs(dataset_path, exist_ok=True)
 
         dataset_entries = []
-        for i, (task_seq, task_text_seq, traj_string_seq, start_imgs_seq) in tqdm(enumerate(zip(task_all_seqs, task_text_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs)),
+        for i, (task_seq, task_text_seq, traj_strings_seq, start_imgs_seq) in tqdm(enumerate(zip(task_all_seqs, task_text_all_seqs, traj_strings_all_seqs, start_imgs_all_seqs)),
                                                                                   total=len(task_all_seqs), desc=f"Building question-answer pairs for {dataset_split} split"):
-            first_static_img = Image.fromarray(start_imgs_seq["rgb_static"])
             first_static_img_name = f"{i:0{num_digits}d}_{task_seq}_static.png"
-            first_static_img.save(f"{dataset_path}/{first_static_img_name}")
-
-            first_gripper_img = Image.fromarray(start_imgs_seq["rgb_gripper"])
             first_gripper_img_name = f"{i:0{num_digits}d}_{task_seq}_gripper.png"
-            first_gripper_img.save(f"{dataset_path}/{first_gripper_img_name}")
+
+            if self.save_imgs:
+                first_static_img = Image.fromarray(start_imgs_seq["rgb_static"])
+                first_static_img.save(f"{dataset_path}/{first_static_img_name}")
+
+                first_gripper_img = Image.fromarray(start_imgs_seq["rgb_gripper"])
+                first_gripper_img.save(f"{dataset_path}/{first_gripper_img_name}")
 
             prompt = get_prompt(task_text_seq)
 
@@ -98,7 +112,10 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
                     "content": prompt,
                     "role": "user"
                 },{
-                    "content": traj_string_seq,
+                    "content": traj_strings_seq["rgb_static"],
+                    "role": "assistant"
+                },{
+                    "content": traj_strings_seq["rgb_gripper"],
                     "role": "assistant"
                 }],
                 "images": [
@@ -147,9 +164,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset-path", type=str, default="/DATA/calvin/task_ABC_D")
     parser.add_argument("--output-dir", type=str, default="/home/troth/data/iTRAP-flower/calvin_vlm_dataset")
+    parser.add_argument("--save-imgs", type=bool, default=False)
     args = parser.parse_args()
     
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     
-    calvin_vlm_dataset_builder = CalvinVLMDatasetBuilder(timestamp=timestamp, dataset_path=args.dataset_path, output_dir=args.output_dir)
+    calvin_vlm_dataset_builder = CalvinVLMDatasetBuilder(timestamp=timestamp, dataset_path=args.dataset_path, output_dir=args.output_dir, save_imgs=args.save_imgs)
     calvin_vlm_dataset_builder.build_dataset()
