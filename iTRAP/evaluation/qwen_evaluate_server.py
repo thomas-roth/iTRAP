@@ -19,7 +19,13 @@ def main(eval_dataset_path: str, val_imgs_dir: str, draw_trajectories=False):
     vlm_client = setup_vlm_client()
 
     with open(eval_dataset_path, "r") as file:
-        eval_dataset = [json.loads(line) for line in file]
+        eval_dataset = []
+        lines = file.readlines()
+
+        assert len(lines) % 2 == 0, "Expected even number of lines in eval dataset (pairs of static and gripper cam data)"
+        for i in range(0, len(lines), 2):
+            pred = {"prompt": json.loads(lines[i])["prompt"], "label": {"static": json.loads(lines[i])["label"], "gripper": json.loads(lines[i+1])["label"]}}
+            eval_dataset.append(pred)
 
     dataset_val_static_imgs = sorted([
         os.path.join(val_imgs_dir, f)
@@ -57,20 +63,20 @@ def main(eval_dataset_path: str, val_imgs_dir: str, draw_trajectories=False):
 
         vlm_outputs_label = eval_ds_entry["label"]
 
-        static_traj_points_pos_score, static_traj_points_pred, static_traj_points_label = get_alignment_of_gripper_points(vlm_outputs_predict["static"], vlm_outputs_label[0], static_img_size)
+        static_traj_points_pos_score, static_traj_points_pred, static_traj_points_label = get_alignment_of_gripper_points(vlm_outputs_predict["static"], vlm_outputs_label["static"], static_img_size)
         static_traj_points_pos_scores.append(static_traj_points_pos_score)
 
-        static_traj_actions_pos_score, static_traj_actions_type_score, static_traj_actions_pred, static_traj_actions_label = get_alignment_of_gripper_actions(vlm_outputs_predict["static"], vlm_outputs_label[0], static_img_size)
+        static_traj_actions_pos_score, static_traj_actions_type_score, static_traj_actions_pred, static_traj_actions_label = get_alignment_of_gripper_actions(vlm_outputs_predict["static"], vlm_outputs_label["static"], static_img_size)
         static_traj_actions_pos_scores.append(static_traj_actions_pos_score)
         static_traj_actions_type_scores.append(static_traj_actions_type_score)
 
         static_traj_total_score = (static_traj_points_pos_score + static_traj_actions_pos_score + static_traj_actions_type_score) / 3
         static_traj_total_scores.append(static_traj_total_score)
 
-        gripper_traj_points_pos_score, gripper_traj_points_pred, gripper_traj_points_label = get_alignment_of_gripper_points(vlm_outputs_predict["gripper"], vlm_outputs_label[1], gripper_img_size)
+        gripper_traj_points_pos_score, gripper_traj_points_pred, gripper_traj_points_label = get_alignment_of_gripper_points(vlm_outputs_predict["gripper"], vlm_outputs_label["gripper"], gripper_img_size)
         gripper_traj_points_pos_scores.append(gripper_traj_points_pos_score)
 
-        gripper_traj_actions_pos_score, gripper_traj_actions_type_score, gripper_traj_actions_pred, gripper_traj_actions_label = get_alignment_of_gripper_actions(vlm_outputs_predict["gripper"], vlm_outputs_label[1], gripper_img_size)
+        gripper_traj_actions_pos_score, gripper_traj_actions_type_score, gripper_traj_actions_pred, gripper_traj_actions_label = get_alignment_of_gripper_actions(vlm_outputs_predict["gripper"], vlm_outputs_label["gripper"], gripper_img_size)
         gripper_traj_actions_pos_scores.append(gripper_traj_actions_pos_score)
         gripper_traj_actions_type_scores.append(gripper_traj_actions_type_score)
 
@@ -88,6 +94,6 @@ def main(eval_dataset_path: str, val_imgs_dir: str, draw_trajectories=False):
 
 
 if __name__ == '__main__':
-    main(eval_dataset_path="/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/qwen3_vl_8b-calvin_abc-2025_11_17-both_cams/merged_best/generated_predictions.jsonl",
+    main(eval_dataset_path="/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/2025_12_06-both_cams-both_trajs/generated_predictions.jsonl",
          val_imgs_dir="/home/troth/data/iTRAP-flower/calvin_vlm_dataset/2025-11-17_21-08-09_qwen3_both-cams/validation",
          draw_trajectories=True)

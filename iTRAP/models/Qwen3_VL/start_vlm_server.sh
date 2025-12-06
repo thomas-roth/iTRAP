@@ -1,5 +1,5 @@
 CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
-    --model /home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/2025_11_17-both_cams/merged_best \
+    --model /home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/2025_12_06-both_cams-both_trajs \
     --host 0.0.0.0 --port 8000 \
     --gpu-memory-utilization 0.95 \
     --max-model-len 2800 \

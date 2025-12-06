@@ -121,7 +121,7 @@ def print_results(output_dir, static_points_pos_scores, static_actions_scores_po
     avg_static_actions_score_type = np.mean(static_actions_scores_type)
     avg_static_total_score = np.mean(static_total_scores)
 
-    results = "Static Camera View:\n" \
+    results = "Static Camera:\n" \
         + f"Average gripper points position score: {round(avg_static_points_pos_score, 2)} (average 0-100 score for pixel distance between pred & label gripper points normalized to traj lengths)\n" \
         + f"Average gripper actions position score: {round(avg_static_actions_score_pos, 2)} (average 0-100 score for pixel distance between pred & label gripper actions normalized to traj lengths)\n" \
         + f"Average gripper actions type score: {round(avg_static_actions_score_type, 2)} (average percentage of matching action types between pred & label gripper actions)\n" \
@@ -132,14 +132,14 @@ def print_results(output_dir, static_points_pos_scores, static_actions_scores_po
     avg_gripper_actions_score_type = np.mean(gripper_actions_scores_type)
     avg_gripper_total_score = np.mean(gripper_total_scores)
 
-    results += "Gripper Camera View:\n" \
+    results += "Gripper Camera:\n" \
         + f"Average gripper points position score: {round(avg_gripper_points_pos_score, 2)} (average 0-100 score for pixel distance between pred & label gripper points normalized to traj lengths)\n" \
         + f"Average gripper actions position score: {round(avg_gripper_actions_score_pos, 2)} (average 0-100 score for pixel distance between pred & label gripper actions normalized to traj lengths)\n" \
         + f"Average gripper actions type score: {round(avg_gripper_actions_score_type, 2)} (average percentage of matching action types between pred & label gripper actions)\n" \
-        + f"Average total score: {round(avg_gripper_total_score, 2)} (unweighted average of the three sub-scores above)"
+        + f"Average total score: {round(avg_gripper_total_score, 2)} (unweighted average of the three sub-scores above)\n\n"
 
-    results += "\nOverall Average Total Score: " \
-        + f"{round((avg_static_total_score + avg_gripper_total_score) / 2, 2)} (unweighted average of static and gripper camera total scores)"
+    results += "Overall Average Total Score: " \
+        + f"{round((avg_static_total_score + avg_gripper_total_score) / 2, 2)} (unweighted average of static and gripper camera total scores)\n"
 
     print(results)
 
@@ -182,45 +182,51 @@ def main(gen_preds_path: str, val_imgs_dir: str, draw_trajectories=False):
     gripper_traj_actions_type_scores = []
     static_traj_total_scores = []
     gripper_traj_total_scores = []
-    for i, vlm_output in tqdm(enumerate(vlm_outputs), total=len(vlm_outputs), desc="Evaluating VLM outputs"):
-        static_traj_points_pos_score, static_traj_points_pred, static_traj_points_label = get_alignment_of_gripper_points(vlm_output["predict"][0], vlm_output["label"][0], static_img_size)
-        static_traj_points_pos_scores.append(static_traj_points_pos_score)
-
-        static_traj_actions_pos_score, static_traj_actions_type_score, static_traj_actions_pred, static_traj_actions_label = get_alignment_of_gripper_actions(vlm_output["predict"][0], vlm_output["label"][0], static_img_size)
-        static_traj_actions_pos_scores.append(static_traj_actions_pos_score)
-        static_traj_actions_type_scores.append(static_traj_actions_type_score)
-
-        static_traj_total_score = (static_traj_points_pos_score + static_traj_actions_pos_score + static_traj_actions_type_score) / 3
-        static_traj_total_scores.append(static_traj_total_score)
-
-        gripper_traj_points_pos_score, gripper_traj_points_pred, gripper_traj_points_label = get_alignment_of_gripper_points(vlm_output["predict"][1], vlm_output["label"][1], gripper_img_size)
-        gripper_traj_points_pos_scores.append(gripper_traj_points_pos_score)
-
-        gripper_traj_actions_pos_score, gripper_traj_actions_type_score, gripper_traj_actions_pred, gripper_traj_actions_label = get_alignment_of_gripper_actions(vlm_output["predict"][1], vlm_output["label"][1], gripper_img_size)
-        gripper_traj_actions_pos_scores.append(gripper_traj_actions_pos_score)
-        gripper_traj_actions_type_scores.append(gripper_traj_actions_type_score)
-
-        gripper_traj_total_score = (gripper_traj_points_pos_score + gripper_traj_actions_pos_score + gripper_traj_actions_type_score) / 3
-        gripper_traj_total_scores.append(gripper_traj_total_score)
+    static_counter = 0
+    gripper_counter = 0
+    for vlm_output in tqdm(vlm_outputs, total=len(vlm_outputs), desc="Evaluating VLM outputs"):
+        if "static" in vlm_output["prompt"]:
+            cam = "static"
+            img_size = static_img_size
+        elif "gripper" in vlm_output["prompt"]:
+            cam = "gripper"
+            img_size = gripper_img_size
+        else:
+            raise ValueError(f"Invalid camera in prompt: {vlm_output['prompt']}")
+        
+        traj_points_pos_score, traj_points_pred, traj_points_label = get_alignment_of_gripper_points(vlm_output["predict"], vlm_output["label"], img_size)
+        traj_actions_pos_score, traj_actions_type_score, traj_actions_pred, traj_actions_label = get_alignment_of_gripper_actions(vlm_output["predict"], vlm_output["label"], img_size)
+        traj_total_score = (traj_points_pos_score + traj_actions_pos_score + traj_actions_type_score) / 3
 
         if draw_trajectories:
             if "image" in vlm_output:
-                static_img_arr = cv2.cvtColor(cv2.imread(vlm_output['image'][0]), cv2.COLOR_BGR2RGB)
-                gripper_img_arr = cv2.cvtColor(cv2.imread(vlm_output['image'][1]), cv2.COLOR_BGR2RGB)
+                img_arr = cv2.cvtColor(cv2.imread(vlm_output['image']), cv2.COLOR_BGR2RGB)
+            elif cam == "static":
+                img_arr = cv2.cvtColor(cv2.imread(dataset_val_static_imgs[static_counter]), cv2.COLOR_BGR2RGB)
             else:
-                static_img_arr = cv2.cvtColor(cv2.imread(dataset_val_static_imgs[i]), cv2.COLOR_BGR2RGB)
-                gripper_img_arr = cv2.cvtColor(cv2.imread(dataset_val_gripper_imgs[i]), cv2.COLOR_BGR2RGB)
+                img_arr = cv2.cvtColor(cv2.imread(dataset_val_gripper_imgs[gripper_counter]), cv2.COLOR_BGR2RGB)
             task = vlm_output["prompt"].split("<prompt>")[1].split("</prompt>")[0].replace(" ", "_")
-            build_and_save_trajectory_images(output_dir, static_img_arr, static_traj_points_pred, static_traj_actions_pred, static_traj_points_label, static_traj_actions_label,
-                                             task, static_traj_total_score, cam="static", output_nr=i)
-            build_and_save_trajectory_images(output_dir, gripper_img_arr, gripper_traj_points_pred, gripper_traj_actions_pred, gripper_traj_points_label, gripper_traj_actions_label,
-                                             task, gripper_traj_total_score, cam="gripper", output_nr=i)
+            build_and_save_trajectory_images(output_dir, img_arr, traj_points_pred, traj_actions_pred, traj_points_label, traj_actions_label,
+                                             task, traj_total_score, cam, output_nr=static_counter if cam == "static" else gripper_counter)
+        
+        if cam == "static":
+            static_traj_points_pos_scores.append(traj_points_pos_score)
+            static_traj_actions_pos_scores.append(traj_actions_pos_score)
+            static_traj_actions_type_scores.append(traj_actions_type_score)
+            static_traj_total_scores.append(traj_total_score)
+            static_counter += 1
+        else:
+            gripper_traj_points_pos_scores.append(traj_points_pos_score)
+            gripper_traj_actions_pos_scores.append(traj_actions_pos_score)
+            gripper_traj_actions_type_scores.append(traj_actions_type_score)
+            gripper_traj_total_scores.append(traj_total_score)
+            gripper_counter += 1
     
     print_results(output_dir, static_traj_points_pos_scores, static_traj_actions_pos_scores, static_traj_actions_type_scores, static_traj_total_scores,
                   gripper_traj_points_pos_scores, gripper_traj_actions_pos_scores, gripper_traj_actions_type_scores, gripper_traj_total_scores)
 
 
 if __name__ == '__main__':
-    main(gen_preds_path="/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/qwen3_vl_8b-calvin_abc-2025_11_17-both_cams/merged_best/generated_predictions.jsonl",
+    main(gen_preds_path="/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/2025_12_06-both_cams-both_trajs/generated_predictions.jsonl",
          val_imgs_dir="/home/troth/data/iTRAP-flower/calvin_vlm_dataset/2025-11-17_21-08-09_qwen3_both-cams/validation",
          draw_trajectories=True)
