@@ -27,70 +27,60 @@ def main(eval_dataset_path: str, val_imgs_dir: str, draw_trajectories=False):
             pred = {"prompt": json.loads(lines[i])["prompt"], "label": {"static": json.loads(lines[i])["label"], "gripper": json.loads(lines[i+1])["label"]}}
             eval_dataset.append(pred)
 
-    dataset_val_static_imgs = sorted([
-        os.path.join(val_imgs_dir, f)
-        for f in os.listdir(val_imgs_dir)
-        if f.endswith(('.png', '.jpg', '.jpeg')) and "static" in f
-    ])
-
-    dataset_val_gripper_imgs = sorted([
-        os.path.join(val_imgs_dir, f)
-        for f in os.listdir(val_imgs_dir)
-        if f.endswith(('.png', '.jpg', '.jpeg')) and "gripper" in f
-    ])
+    dataset_val = {}
+    for cam in ["static", "gripper"]:
+        dataset_val[cam] = sorted([
+            os.path.join(val_imgs_dir, f)
+            for f in os.listdir(val_imgs_dir)
+            if f.endswith(('.png', '.jpg', '.jpeg')) and cam in f
+        ])
     
-    static_traj_points_pos_scores = []
-    static_traj_actions_pos_scores = []
-    static_traj_actions_type_scores = []
-    static_traj_total_scores = []
-    gripper_traj_points_pos_scores = []
-    gripper_traj_actions_pos_scores = []
-    gripper_traj_actions_type_scores = []
-    gripper_traj_total_scores = []
-    for i, (eval_ds_entry, static_img_path, gripper_img_path) in tqdm(enumerate(zip(eval_dataset, dataset_val_static_imgs, dataset_val_gripper_imgs)), total=len(dataset_val_static_imgs), desc="Evaluating VLM outputs"):
-        static_img_arr = cv2.cvtColor(cv2.imread(static_img_path), cv2.COLOR_BGR2RGB)
-        assert static_img_arr.shape[0] == static_img_arr.shape[1]
-        static_img_size = static_img_arr.shape[0]
+    img_arrs = {}
+    img_sizes = {}
+    traj_points_preds = {}
+    traj_points_labels = {}
+    traj_actions_preds = {}
+    traj_actions_labels = {}
+    traj_points_pos_scores = {"static": [], "gripper": []}
+    traj_actions_pos_scores = {"static": [], "gripper": []}
+    traj_actions_type_scores = {"static": [], "gripper": []}
+    traj_total_scores = {"static": [], "gripper": []}
+    for i, (eval_ds_entry, static_img_path, gripper_img_path) in tqdm(enumerate(zip(eval_dataset, dataset_val["static"], dataset_val["gripper"])), total=len(dataset_val["static"]), desc="Evaluating VLM outputs"):
+        img_arrs["static"] = cv2.cvtColor(cv2.imread(static_img_path), cv2.COLOR_BGR2RGB)
+        assert img_arrs["static"].shape[0] == img_arrs["static"].shape[1]
+        img_sizes["static"] = img_arrs["static"].shape[0]
 
-        gripper_img_arr = cv2.cvtColor(cv2.imread(gripper_img_path), cv2.COLOR_BGR2RGB)
-        assert gripper_img_arr.shape[0] == gripper_img_arr.shape[1]
-        gripper_img_size = gripper_img_arr.shape[0]
+        img_arrs["gripper"] = cv2.cvtColor(cv2.imread(gripper_img_path), cv2.COLOR_BGR2RGB)
+        assert img_arrs["gripper"].shape[0] == img_arrs["gripper"].shape[1]
+        img_sizes["gripper"] = img_arrs["gripper"].shape[0]
 
         task = static_img_path.split("_static.png")[0].split("validation/")[1][5:]
         task_text = eval_ds_entry["prompt"].split("<prompt>")[1].split("</prompt>")[0]
         
-        vlm_outputs_predict = query_vlm(static_img_arr, gripper_img_arr, vlm_client, task_text)
+        vlm_outputs_predict = query_vlm(img_arrs["static"], img_arrs["gripper"], vlm_client, task_text)
 
         vlm_outputs_label = eval_ds_entry["label"]
-
-        static_traj_points_pos_score, static_traj_points_pred, static_traj_points_label = get_alignment_of_gripper_points(vlm_outputs_predict["static"], vlm_outputs_label["static"], static_img_size)
-        static_traj_points_pos_scores.append(static_traj_points_pos_score)
-
-        static_traj_actions_pos_score, static_traj_actions_type_score, static_traj_actions_pred, static_traj_actions_label = get_alignment_of_gripper_actions(vlm_outputs_predict["static"], vlm_outputs_label["static"], static_img_size)
-        static_traj_actions_pos_scores.append(static_traj_actions_pos_score)
-        static_traj_actions_type_scores.append(static_traj_actions_type_score)
-
-        static_traj_total_score = (static_traj_points_pos_score + static_traj_actions_pos_score + static_traj_actions_type_score) / 3
-        static_traj_total_scores.append(static_traj_total_score)
-
-        gripper_traj_points_pos_score, gripper_traj_points_pred, gripper_traj_points_label = get_alignment_of_gripper_points(vlm_outputs_predict["gripper"], vlm_outputs_label["gripper"], gripper_img_size)
-        gripper_traj_points_pos_scores.append(gripper_traj_points_pos_score)
-
-        gripper_traj_actions_pos_score, gripper_traj_actions_type_score, gripper_traj_actions_pred, gripper_traj_actions_label = get_alignment_of_gripper_actions(vlm_outputs_predict["gripper"], vlm_outputs_label["gripper"], gripper_img_size)
-        gripper_traj_actions_pos_scores.append(gripper_traj_actions_pos_score)
-        gripper_traj_actions_type_scores.append(gripper_traj_actions_type_score)
-
-        gripper_traj_total_score = (gripper_traj_points_pos_score + gripper_traj_actions_pos_score + gripper_traj_actions_type_score) / 3
-        gripper_traj_total_scores.append(gripper_traj_total_score)
-
-        if draw_trajectories:
-            build_and_save_trajectory_images(output_dir, static_img_arr, static_traj_points_pred, static_traj_actions_pred, static_traj_points_label, static_traj_actions_label,
-                                             task, static_traj_total_score, cam="static", output_nr=i)
-            build_and_save_trajectory_images(output_dir, gripper_img_arr, gripper_traj_points_pred, gripper_traj_actions_pred, gripper_traj_points_label, gripper_traj_actions_label,
-                                             task, gripper_traj_total_score, cam="gripper", output_nr=i)
+        
+        for cam in ["static", "gripper"]:
+            points_pos_score, points_pred, points_label = get_alignment_of_gripper_points(vlm_outputs_predict[cam], vlm_outputs_label[cam], img_sizes[cam])
+            actions_pos_score, actions_type_score, actions_pred, actions_label = get_alignment_of_gripper_actions(vlm_outputs_predict[cam], vlm_outputs_label[cam], img_sizes[cam])
+            total_score = (points_pos_score + actions_pos_score + actions_type_score) / 3
+            
+            traj_points_preds[cam] = points_pred
+            traj_points_labels[cam] = points_label
+            traj_actions_preds[cam] = actions_pred
+            traj_actions_labels[cam] = actions_label
+            
+            traj_points_pos_scores[cam].append(points_pos_score)
+            traj_actions_pos_scores[cam].append(actions_pos_score)
+            traj_actions_type_scores[cam].append(actions_type_score)
+            traj_total_scores[cam].append(total_score)
+            
+            if draw_trajectories:
+                build_and_save_trajectory_images(output_dir, img_arrs[cam], points_pred, actions_pred, points_label, actions_label, task, total_score, cam, output_nr=i)
     
-    print_results(output_dir, static_traj_points_pos_scores, static_traj_actions_pos_scores, static_traj_actions_type_scores, static_traj_total_scores,
-                  gripper_traj_points_pos_scores, gripper_traj_actions_pos_scores, gripper_traj_actions_type_scores, gripper_traj_total_scores)
+    print_results(output_dir, traj_points_pos_scores["static"], traj_actions_pos_scores["static"], traj_actions_type_scores["static"], traj_total_scores["static"],
+                  traj_points_pos_scores["gripper"], traj_actions_pos_scores["gripper"], traj_actions_type_scores["gripper"], traj_total_scores["gripper"])
 
 
 if __name__ == '__main__':

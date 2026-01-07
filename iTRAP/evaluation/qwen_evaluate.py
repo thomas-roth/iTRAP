@@ -157,73 +157,60 @@ def main(gen_preds_path: str, val_imgs_dir: str, draw_trajectories=False):
         first_static_img = Image.open(vlm_outputs[0]['image'][0])
         first_gripper_img = Image.open(vlm_outputs[0]['image'][1])
     else:
-        dataset_val_static_imgs = sorted([
+        dataset_val = {}
+        dataset_val["static"] = sorted([
             os.path.join(val_imgs_dir, f)
             for f in os.listdir(val_imgs_dir)
             if f.endswith(('.png', '.jpg', '.jpeg')) and "static" in f
         ])
-        first_static_img = Image.open(dataset_val_static_imgs[0])
-        dataset_val_gripper_imgs = sorted([
+        dataset_val["gripper"] = sorted([
             os.path.join(val_imgs_dir, f)
             for f in os.listdir(val_imgs_dir)
             if f.endswith(('.png', '.jpg', '.jpeg')) and "gripper" in f
         ])
-        first_gripper_img = Image.open(dataset_val_gripper_imgs[0])
-    assert first_static_img.size[0] == first_static_img.size[1]
-    static_img_size = first_static_img.size[0]
-    assert first_gripper_img.size[0] == first_gripper_img.size[1]
-    gripper_img_size = first_gripper_img.size[0]
+        first_static_img = Image.open(dataset_val["static"][0])
+        first_gripper_img = Image.open(dataset_val["gripper"][0])
     
-    static_traj_points_pos_scores = []
-    static_traj_actions_pos_scores = []
-    static_traj_actions_type_scores = []
-    gripper_traj_points_pos_scores = []
-    gripper_traj_actions_pos_scores = []
-    gripper_traj_actions_type_scores = []
-    static_traj_total_scores = []
-    gripper_traj_total_scores = []
-    static_counter = 0
-    gripper_counter = 0
+    assert first_static_img.size[0] == first_static_img.size[1]
+    assert first_gripper_img.size[0] == first_gripper_img.size[1]
+    img_sizes = {}
+    img_sizes["static"] = first_static_img.size[0]
+    img_sizes["gripper"] = first_gripper_img.size[0]
+    
+    traj_points_pos_scores = {"static": [], "gripper": []}
+    traj_actions_pos_scores = {"static": [], "gripper": []}
+    traj_actions_type_scores = {"static": [], "gripper": []}
+    traj_total_scores = {"static": [], "gripper": []}
+    img_counters = {"static": 0, "gripper": 0}
     for vlm_output in tqdm(vlm_outputs, total=len(vlm_outputs), desc="Evaluating VLM outputs"):
         if "static" in vlm_output["prompt"]:
             cam = "static"
-            img_size = static_img_size
         elif "gripper" in vlm_output["prompt"]:
             cam = "gripper"
-            img_size = gripper_img_size
         else:
             raise ValueError(f"Invalid camera in prompt: {vlm_output['prompt']}")
         
-        traj_points_pos_score, traj_points_pred, traj_points_label = get_alignment_of_gripper_points(vlm_output["predict"], vlm_output["label"], img_size)
-        traj_actions_pos_score, traj_actions_type_score, traj_actions_pred, traj_actions_label = get_alignment_of_gripper_actions(vlm_output["predict"], vlm_output["label"], img_size)
+        traj_points_pos_score, traj_points_pred, traj_points_label = get_alignment_of_gripper_points(vlm_output["predict"], vlm_output["label"], img_sizes[cam])
+        traj_actions_pos_score, traj_actions_type_score, traj_actions_pred, traj_actions_label = get_alignment_of_gripper_actions(vlm_output["predict"], vlm_output["label"], img_sizes[cam])
         traj_total_score = (traj_points_pos_score + traj_actions_pos_score + traj_actions_type_score) / 3
 
         if draw_trajectories:
             if "image" in vlm_output:
                 img_arr = cv2.cvtColor(cv2.imread(vlm_output['image']), cv2.COLOR_BGR2RGB)
-            elif cam == "static":
-                img_arr = cv2.cvtColor(cv2.imread(dataset_val_static_imgs[static_counter]), cv2.COLOR_BGR2RGB)
             else:
-                img_arr = cv2.cvtColor(cv2.imread(dataset_val_gripper_imgs[gripper_counter]), cv2.COLOR_BGR2RGB)
+                img_arr = cv2.cvtColor(cv2.imread(dataset_val[cam][img_counters[cam]]), cv2.COLOR_BGR2RGB)
             task = vlm_output["prompt"].split("<prompt>")[1].split("</prompt>")[0].replace(" ", "_")
             build_and_save_trajectory_images(output_dir, img_arr, traj_points_pred, traj_actions_pred, traj_points_label, traj_actions_label,
-                                             task, traj_total_score, cam, output_nr=static_counter if cam == "static" else gripper_counter)
-        
-        if cam == "static":
-            static_traj_points_pos_scores.append(traj_points_pos_score)
-            static_traj_actions_pos_scores.append(traj_actions_pos_score)
-            static_traj_actions_type_scores.append(traj_actions_type_score)
-            static_traj_total_scores.append(traj_total_score)
-            static_counter += 1
-        else:
-            gripper_traj_points_pos_scores.append(traj_points_pos_score)
-            gripper_traj_actions_pos_scores.append(traj_actions_pos_score)
-            gripper_traj_actions_type_scores.append(traj_actions_type_score)
-            gripper_traj_total_scores.append(traj_total_score)
-            gripper_counter += 1
+                                             task, traj_total_score, cam, output_nr=img_counters[cam])
+
+        traj_points_pos_scores[cam].append(traj_points_pos_score)
+        traj_actions_pos_scores[cam].append(traj_actions_pos_score)
+        traj_actions_type_scores[cam].append(traj_actions_type_score)
+        traj_total_scores[cam].append(traj_total_score)
+        img_counters[cam] += 1
     
-    print_results(output_dir, static_traj_points_pos_scores, static_traj_actions_pos_scores, static_traj_actions_type_scores, static_traj_total_scores,
-                  gripper_traj_points_pos_scores, gripper_traj_actions_pos_scores, gripper_traj_actions_type_scores, gripper_traj_total_scores)
+    print_results(output_dir, traj_points_pos_scores["static"], traj_actions_pos_scores["static"], traj_actions_type_scores["static"], traj_total_scores["static"],
+                  traj_points_pos_scores["gripper"], traj_actions_pos_scores["gripper"], traj_actions_type_scores["gripper"], traj_total_scores["gripper"])
 
 
 if __name__ == '__main__':
