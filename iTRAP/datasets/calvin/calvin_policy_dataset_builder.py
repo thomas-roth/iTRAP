@@ -184,5 +184,5 @@ if __name__ == '__main__':
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     
     calvin_policy_dataset_builder = CalvinPolicyDatasetBuilder(timestamp=timestamp, dataset_path=args.dataset_path, output_dir=args.output_dir,
-                                                               traj_drawing_thickness=5)
+                                                               traj_drawing_thickness=2)
     calvin_policy_dataset_builder.build_dataset()

@@ -70,7 +70,8 @@ def query_vlm(static_img_start, gripper_img_start, vlm_client, task):
                     }
                 }
             ]
-        }]
+        }],
+        temperature=0.7, # matches SFT generation temp
     )
     responses["static"] = response_static.choices[0].message.content
 
@@ -89,7 +90,8 @@ def query_vlm(static_img_start, gripper_img_start, vlm_client, task):
                     }
                 }
             ]
-        }]
+        }],
+        temperature=0.7, # matches SFT generation temp
     )
     responses["gripper"] = response_gripper.choices[0].message.content
 
