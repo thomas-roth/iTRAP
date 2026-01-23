@@ -18,7 +18,25 @@ def parse_vlm_outputs(file_path: str) -> list:
     with open(file_path, 'r') as file:
         for task in file:
             task = json.loads(task)
-            vlm_outputs.append(task)
+            
+            if "two views" in task["prompt"]:
+                assert "\n" in task["predict"], f"Expected newline in VLM output splitting the two views: {repr(task['predict'])}"
+                assert "\n" in task["label"], f"Expected newline in VLM label splitting the two views: {repr(task['label'])}"
+                vlm_outputs.append({
+                    **({"image": task["image"][0]} if "image" in task else {}),
+                    "prompt": task["prompt"] + " (static camera)", # not pretty (bc it's inserted after user prompt ends & assistant prompt begins) but works
+                    "predict": task["predict"].split("\n")[0],
+                    "label": task["label"].split("\n")[0]
+                })
+                vlm_outputs.append({
+                    **({"image": task["image"][1]} if "image" in task else {}),
+                    "prompt": task["prompt"] + " (gripper camera)", # not pretty (bc it's inserted after user prompt ends & assistant prompt begins) but works
+                    "predict": task["predict"].split("\n")[1],
+                    "label": task["label"].split("\n")[1]
+                })
+            else:
+                vlm_outputs.append(task)
+    
     return vlm_outputs
 
 
@@ -185,7 +203,7 @@ def main(gen_preds_path: str, val_imgs_dir: str, draw_trajectories=False):
     for vlm_output in tqdm(vlm_outputs, total=len(vlm_outputs), desc="Evaluating VLM outputs"):
         if "static" in vlm_output["prompt"]:
             cam = "static"
-        elif "gripper" in vlm_output["prompt"]:
+        elif "gripper camera" in vlm_output["prompt"]: # ' camera' required bc 'gripper' always present in the prompt regardless of cam
             cam = "gripper"
         else:
             raise ValueError(f"Invalid camera in prompt: {vlm_output['prompt']}")
@@ -214,6 +232,6 @@ def main(gen_preds_path: str, val_imgs_dir: str, draw_trajectories=False):
 
 
 if __name__ == '__main__':
-    main(gen_preds_path="/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/2025_12_06-both_cams-both_trajs/generated_predictions.jsonl",
-         val_imgs_dir="/home/troth/data/iTRAP-flower/calvin_vlm_dataset/2025-11-17_21-08-09_qwen3_both-cams/validation",
+    main(gen_preds_path="/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/2026_01_22-both_cams-both_trajs-single_query/generated_predictions.jsonl",
+         val_imgs_dir="/home/troth/data/iTRAP-flower/calvin_vlm_dataset/2025-11-17_21-08-09_qwen3_both-cams_single-query_static-traj-only/validation", # old but only for imgs & last one where imgs created
          draw_trajectories=True)

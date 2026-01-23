@@ -182,7 +182,7 @@ class ItrapEvaluator:
         # get trajectory points & actions from initial state of scene & robot (static camera image untransformed as render() used instead of get_obs())
         static_img_start = self.env.cameras[0].render()[0].squeeze()
         gripper_img_start = self.env.cameras[1].render()[0].squeeze()
-        vlm_responses = query_vlm(static_img_start, gripper_img_start, self.vlm_client, subtask)
+        vlm_responses = query_vlm(static_img_start, gripper_img_start, self.vlm_client, subtask, single_query=True)
         static_traj_points, static_traj_actions = extract_gripper_points_and_actions(vlm_responses["static"], static_img_start.shape[0],
                                                                                                      static_img_start.shape[1], logger=self.logger)
         gripper_traj_points, gripper_traj_actions = extract_gripper_points_and_actions(vlm_responses["gripper"], gripper_img_start.shape[0],

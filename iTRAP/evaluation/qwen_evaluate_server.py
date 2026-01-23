@@ -21,11 +21,22 @@ def main(eval_dataset_path: str, val_imgs_dir: str, draw_trajectories=False):
     with open(eval_dataset_path, "r") as file:
         eval_dataset = []
         lines = file.readlines()
-
-        assert len(lines) % 2 == 0, "Expected even number of lines in eval dataset (pairs of static and gripper cam data)"
-        for i in range(0, len(lines), 2):
-            pred = {"prompt": json.loads(lines[i])["prompt"], "label": {"static": json.loads(lines[i])["label"], "gripper": json.loads(lines[i+1])["label"]}}
-            eval_dataset.append(pred)
+        
+        if "two views" in lines[0]:
+            # single query for both cams => split label into two entries
+            for line in lines:
+                line = json.loads(line)
+                
+                assert "\n" in line["label"], f"Expected newline in eval dataset label splitting the two views : {repr(line['label'])}"
+                
+                pred = {"prompt": line["prompt"], "label": {"static": line["label"].split("\n")[0], "gripper": line["label"].split("\n")[1]}}
+                eval_dataset.append(pred)
+        else:
+            # separate queries for both cams => pair every two lines
+            assert len(lines) % 2 == 0, "Expected even number of lines in eval dataset (pairs of static and gripper cam data)"
+            for i in range(0, len(lines), 2):
+                pred = {"prompt": json.loads(lines[i])["prompt"], "label": {"static": json.loads(lines[i])["label"], "gripper": json.loads(lines[i+1])["label"]}}
+                eval_dataset.append(pred)
 
     dataset_val = {}
     for cam in ["static", "gripper"]:
@@ -57,7 +68,7 @@ def main(eval_dataset_path: str, val_imgs_dir: str, draw_trajectories=False):
         task = static_img_path.split("_static.png")[0].split("validation/")[1][5:]
         task_text = eval_ds_entry["prompt"].split("<prompt>")[1].split("</prompt>")[0]
         
-        vlm_outputs_predict = query_vlm(img_arrs["static"], img_arrs["gripper"], vlm_client, task_text)
+        vlm_outputs_predict = query_vlm(img_arrs["static"], img_arrs["gripper"], vlm_client, task_text, single_query=True)
 
         vlm_outputs_label = eval_ds_entry["label"]
         
@@ -84,6 +95,6 @@ def main(eval_dataset_path: str, val_imgs_dir: str, draw_trajectories=False):
 
 
 if __name__ == '__main__':
-    main(eval_dataset_path="/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/2025_12_06-both_cams-both_trajs/generated_predictions.jsonl",
-         val_imgs_dir="/home/troth/data/iTRAP-flower/calvin_vlm_dataset/2025-11-17_21-08-09_qwen3_both-cams/validation",
+    main(eval_dataset_path="/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/2026_01_22-both_cams-both_trajs-single_query/generated_predictions.jsonl",
+         val_imgs_dir="/home/troth/data/iTRAP-flower/calvin_vlm_dataset/2025-11-17_21-08-09_qwen3_both-cams_single-query_static-traj-only/validation", # old but only for imgs & last one where imgs created
          draw_trajectories=True)

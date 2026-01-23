@@ -25,18 +25,25 @@ def setup_vlm_client():
     return client
 
 
-def get_prompt(task: str, cam: str) -> str:
-    if cam != "static" and cam != "gripper":
-        raise ValueError(f"Invalid cam type {cam} for prompt generation")
-    
-    return f"<image>The image shows the view from the {cam} camera of the scene. In the image, please execute the command described in <prompt>{task.replace('_', ' ')}</prompt>. " \
-            "Provide a sequence of points denoting the trajectory of a robot gripper to achieve the goal. " \
-            "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(x_1, y_1), (x_2, y_2), " \
-            "(x_3, y_3), <action>Open Gripper</action>, (x_4, y_4), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
-            "an x and y location of the end effector of the gripper in the image. The action tags indicate the gripper action."
+def get_prompt(task: str, cam:str=None, single_query=False) -> str:
+    if single_query:
+        return f"<image><image>The images show two views of the same scene. In the images, please execute the command described in <prompt>{task.replace('_', ' ')}</prompt>. " \
+                "Provide two sequences of points denoting the trajectory of a robot gripper in each of the views to achieve the goal. " \
+                "Format your answer as two lists of tuples each enclosed by <ans> and </ans> tags. For example: <ans>[(x_1, y_1), (x_2, y_2), " \
+                "(x_3, y_3), <action>Open Gripper</action>, (x_4, y_4), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
+                "an x and y location of the end effector of the gripper in one of the images. The action tags indicate the gripper action."
+    else:
+        if cam != "static" and cam != "gripper":
+            raise ValueError(f"Invalid cam type {cam} for prompt generation")
+        
+        return f"<image>The image shows the view from the {cam} camera of the scene. In the image, please execute the command described in <prompt>{task.replace('_', ' ')}</prompt>. " \
+                "Provide a sequence of points denoting the trajectory of a robot gripper to achieve the goal. " \
+                "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(x_1, y_1), (x_2, y_2), " \
+                "(x_3, y_3), <action>Open Gripper</action>, (x_4, y_4), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
+                "an x and y location of the end effector of the gripper in the image. The action tags indicate the gripper action."
 
 
-def query_vlm(static_img_start, gripper_img_start, vlm_client, task):
+def query_vlm(static_img_start, gripper_img_start, vlm_client, task, single_query=False):
     # get base64 encoded image of first frame of static camera
     img_buffer = io.BytesIO()
     Image.fromarray(static_img_start).save(img_buffer, format="PNG")
@@ -50,50 +57,83 @@ def query_vlm(static_img_start, gripper_img_start, vlm_client, task):
     Image.fromarray(gripper_img_start).save(img_buffer, format="PNG")
     base64_gripper_img = base64.b64encode(img_buffer.getvalue()).decode("utf-8")
 
-    prompt_static = get_prompt(task, cam="static")
-    prompt_gripper = get_prompt(task, cam="gripper")
-    
-    # send requests to vlm
     responses = {}
-    response_static = vlm_client.chat.completions.create(
-        model="qwen3_vl",
-        messages=[{
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": prompt_static
-                },{
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/png;base64,{base64_static_img}"
+    if single_query:
+        prompt = get_prompt(task, single_query=True)
+        
+        # send request to vlm
+        response_single_query = vlm_client.chat.completions.create(
+            model="qwen3_vl",
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt
+                    },{
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{base64_static_img}"
+                        }
+                    },{
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{base64_gripper_img}"
+                        }
                     }
-                }
-            ]
-        }],
-        temperature=0.7, # matches SFT generation temp
-    )
-    responses["static"] = response_static.choices[0].message.content
+                ]
+            }],
+            temperature=0.7, # matches SFT generation temp
+        )
+        
+        assert "\n" in response_single_query.choices[0].message.content, "Expected two answers separated by newline for single VLM query with two views"
+        responses["static"] = response_single_query.choices[0].message.content.split("\n")[0]
+        responses["gripper"] = response_single_query.choices[0].message.content.split("\n")[1]
+    else:
 
-    response_gripper = vlm_client.chat.completions.create(
-        model="qwen3_vl",
-        messages=[{
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": prompt_gripper
-                },{
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/png;base64,{base64_gripper_img}"
+        prompt_static = get_prompt(task, cam="static")
+        prompt_gripper = get_prompt(task, cam="gripper")
+        
+        # send requests to vlm
+        response_static = vlm_client.chat.completions.create(
+            model="qwen3_vl",
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt_static
+                    },{
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{base64_static_img}"
+                        }
                     }
-                }
-            ]
-        }],
-        temperature=0.7, # matches SFT generation temp
-    )
-    responses["gripper"] = response_gripper.choices[0].message.content
+                ]
+            }],
+            temperature=0.7, # matches SFT generation temp
+        )
+        responses["static"] = response_static.choices[0].message.content
+
+        response_gripper = vlm_client.chat.completions.create(
+            model="qwen3_vl",
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt_gripper
+                    },{
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{base64_gripper_img}"
+                        }
+                    }
+                ]
+            }],
+            temperature=0.7, # matches SFT generation temp
+        )
+        responses["gripper"] = response_gripper.choices[0].message.content
 
     return responses
 
