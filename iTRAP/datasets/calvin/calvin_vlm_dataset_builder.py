@@ -171,7 +171,7 @@ class CalvinVLMDatasetBuilder(CalvinDatasetBuilder):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset-path", type=str, default="/DATA/calvin/task_ABC_D")
-    parser.add_argument("--output-dir", type=str, default="/home/troth/data/iTRAP-flower/calvin_vlm_dataset")
+    parser.add_argument("--output-dir", type=str, default="/DATA/troth/iTRAP/data/calvin_vlm_dataset")
     parser.add_argument("--save-imgs", type=bool, default=False)
     args = parser.parse_args()
     

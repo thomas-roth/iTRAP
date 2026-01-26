@@ -178,7 +178,7 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset-path", type=str, default="/DATA/calvin/task_ABC_D")
-    parser.add_argument("--output-dir", type=str, default="/home/troth/data/iTRAP-flower/calvin_policy_dataset")
+    parser.add_argument("--output-dir", type=str, default="/DATA/troth/iTRAP/data/calvin_policy_dataset")
     args = parser.parse_args()
 
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
