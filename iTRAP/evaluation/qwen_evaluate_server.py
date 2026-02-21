@@ -95,6 +95,6 @@ def main(eval_dataset_path: str, val_imgs_dir: str, draw_trajectories=False):
 
 
 if __name__ == '__main__':
-    main(eval_dataset_path="/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/2026_01_22-both_cams-both_trajs-single_query/generated_predictions.jsonl",
+    main(eval_dataset_path="/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/2026_02_19-unfrozen_vision_tower-longer_training/generated_predictions.jsonl",
          val_imgs_dir="/DATA/troth/iTRAP/data/calvin_vlm_dataset/2025-11-17_21-08-09_qwen3_both-cams_single-query_static-traj-only/validation", # old but only for imgs & last one where imgs created
          draw_trajectories=True)
