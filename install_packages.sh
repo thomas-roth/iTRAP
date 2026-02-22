@@ -44,6 +44,7 @@ uv pip install dtw-python
 uv pip install -r requirements.txt
 uv pip uninstall opencv-python # clashes with opencv-python-headless
 uv pip install numpy-quaternion # fix numpy version issues
+uv pip install pylineclip
 cd ..
 
 # Qwen3-VL

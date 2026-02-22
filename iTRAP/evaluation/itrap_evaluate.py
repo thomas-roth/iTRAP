@@ -181,17 +181,22 @@ class ItrapEvaluator:
 
         # get trajectory points & actions from initial state of scene & robot (static camera image untransformed as render() used instead of get_obs())
         static_img_start = self.env.cameras[0].render()[0].squeeze()
-        gripper_img_start = self.env.cameras[1].render()[0].squeeze()
+        gripper_img_start, gripper_depth_img = self.env.cameras[1].render()
+        gripper_img_start = gripper_img_start.squeeze()
         vlm_responses = query_vlm(static_img_start, gripper_img_start, self.vlm_client, subtask, single_query=True)
-        static_traj_points, static_traj_actions = extract_gripper_points_and_actions(vlm_responses["static"], static_img_start.shape[0],
+        static_traj_points, static_traj_actions, _ = extract_gripper_points_and_actions(vlm_responses["static"], static_img_start.shape[0],
                                                                                                      static_img_start.shape[1], logger=self.logger)
-        gripper_traj_points, gripper_traj_actions = extract_gripper_points_and_actions(vlm_responses["gripper"], gripper_img_start.shape[0],
+        gripper_traj_points, gripper_traj_actions, gripper_dont_draw_line_between = extract_gripper_points_and_actions(vlm_responses["gripper"], gripper_img_start.shape[0],
                                                                                                        gripper_img_start.shape[1], logger=self.logger)
+
+        # store world coords of gripper traj for later reprojection w/ changed gripper cam view
+        gripper_traj_points_world = self._deproject_gripper_traj_points(gripper_traj_points, gripper_depth_img)
+        gripper_traj_actions_world = self._deproject_gripper_traj_actions(gripper_traj_actions, gripper_depth_img)
 
         if self.flower_eval_cfg.save_traj_imgs:
             untransformed_static_traj_img = draw_trajectory_onto_image(static_img_start, static_traj_points, static_traj_actions)
             save_trajectory_image(untransformed_static_traj_img, subtask, local_rank, seq_nr, subtask_nr, step_nr=0, root_output_dir=self.output_dir)
-            untransformed_gripper_traj_img = draw_trajectory_onto_image(gripper_img_start, gripper_traj_points, gripper_traj_actions)
+            untransformed_gripper_traj_img = draw_trajectory_onto_image(gripper_img_start, gripper_traj_points, gripper_traj_actions, gripper_dont_draw_line_between)
             save_trajectory_image(untransformed_gripper_traj_img, subtask, local_rank, seq_nr, subtask_nr, step_nr=0, root_output_dir=self.output_dir)
 
         self.policy.reset()
@@ -199,41 +204,48 @@ class ItrapEvaluator:
 
         if self.flower_eval_cfg.record:
             # update static cam video with initial state
-            static_img = self.env.cameras[0].render()[0].squeeze()
-            static_traj_img = draw_trajectory_onto_image(static_img, static_traj_points, static_traj_actions)
-            normalized_static_traj_img = static_traj_img / 127.5 - 1 # normalize to [-1, 1]
-            self.static_rollout_video.update(torch.tensor(normalized_static_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device)) # shape: B, F, C, H, W
-
+            self._update_rollout_video(self.static_rollout_video, static_img_start, static_traj_points, static_traj_actions)
+            
             # update gripper cam video with initial state
-            gripper_img = self.env.cameras[1].render()[0].squeeze()
-            gripper_traj_img = draw_trajectory_onto_image(gripper_img, gripper_traj_points, gripper_traj_actions)
-            normalized_gripper_traj_img = gripper_traj_img / 127.5 - 1 # normalize to [-1, 1]
-            self.gripper_rollout_video.update(torch.tensor(normalized_gripper_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device)) # shape: B, F, C, H, W
-
+            # no reprojection needed for first frame as traj points are extracted from initial gripper cam image
+            self._update_rollout_video(self.gripper_rollout_video, gripper_img_start, gripper_traj_points, gripper_traj_actions, gripper_dont_draw_line_between)
+            
         success = False
         for step in tqdm(range(self.flower_eval_cfg.ep_len), desc=f"Rolling out policy for task {subtask}", leave=False):
             if step == self.flower_eval_cfg.ep_len / 2:
                 # query vlm again to help robot out of wrong state
                 untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
-                untransformed_gripper_img = self.env.cameras[1].render()[0].squeeze()
+                untransformed_gripper_img, gripper_depth_img = self.env.cameras[1].render()
+                untransformed_gripper_img = untransformed_gripper_img.squeeze()
+                
                 vlm_responses = query_vlm(untransformed_static_img, untransformed_gripper_img, self.vlm_client, subtask)
-                static_traj_points, static_traj_actions = extract_gripper_points_and_actions(vlm_responses["static"], untransformed_static_img.shape[0],
+                static_traj_points, static_traj_actions, _ = extract_gripper_points_and_actions(vlm_responses["static"], untransformed_static_img.shape[0],
                                                                                                              untransformed_static_img.shape[1], logger=self.logger)
-                gripper_traj_points, gripper_traj_actions = extract_gripper_points_and_actions(vlm_responses["gripper"], untransformed_gripper_img.shape[0],
+                gripper_traj_points, gripper_traj_actions, gripper_dont_draw_line_between = extract_gripper_points_and_actions(vlm_responses["gripper"], untransformed_gripper_img.shape[0],
                                                                                                                untransformed_gripper_img.shape[1], logger=self.logger)
+                
+                # store world coords of gripper traj for later reprojection w/ changed gripper cam view
+                gripper_traj_points_world = self._deproject_gripper_traj_points(gripper_traj_points, gripper_depth_img)
+                gripper_traj_actions_world = self._deproject_gripper_traj_actions(gripper_traj_actions, gripper_depth_img)
 
                 if self.flower_eval_cfg.save_traj_imgs:
                     untransformed_static_traj_img = draw_trajectory_onto_image(untransformed_static_img, static_traj_points, static_traj_actions)
                     save_trajectory_image(untransformed_static_traj_img, subtask, local_rank, seq_nr, subtask_nr, step, self.output_dir)
-                    untransformed_gripper_traj_img = draw_trajectory_onto_image(untransformed_gripper_img, gripper_traj_points, gripper_traj_actions)
+                    untransformed_gripper_traj_img = draw_trajectory_onto_image(untransformed_gripper_img, gripper_traj_points, gripper_traj_actions, gripper_dont_draw_line_between)
                     save_trajectory_image(untransformed_gripper_traj_img, subtask, local_rank, seq_nr, subtask_nr, step, self.output_dir)
 
             if step % self.policy.multistep == 0:
                 # model predicts multistep actions per step => only draw trajectory once per multistep
                 untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
-                untransformed_gripper_img = self.env.cameras[1].render()[0].squeeze()
+                untransformed_gripper_img, gripper_depth_img = self.env.cameras[1].render()
+                untransformed_gripper_img = untransformed_gripper_img.squeeze()
+
+                # reproject gripper traj points to current gripper cam view
+                gripper_traj_points = self._reproject_gripper_traj_points(gripper_traj_points_world) # .render() updates view_matrix
+                gripper_traj_actions = self._reproject_gripper_traj_actions(gripper_traj_actions_world)
+                
                 untransformed_static_traj_img = draw_trajectory_onto_image(untransformed_static_img, static_traj_points, static_traj_actions)
-                untransformed_gripper_traj_img = draw_trajectory_onto_image(untransformed_gripper_img, gripper_traj_points, gripper_traj_actions)
+                untransformed_gripper_traj_img = draw_trajectory_onto_image(untransformed_gripper_img, gripper_traj_points, gripper_traj_actions, gripper_dont_draw_line_between)
 
                 # apply transforms to trajectory images
                 transformed_static_traj_img = torch.tensor(untransformed_static_traj_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
@@ -252,16 +264,17 @@ class ItrapEvaluator:
             if self.flower_eval_cfg.record:
                 # update static cam video with current state
                 static_img = self.env.cameras[0].render()[0].squeeze()
-                static_traj_img = draw_trajectory_onto_image(static_img, static_traj_points, static_traj_actions)
-                normalized_static_traj_img = static_traj_img / 127.5 - 1 # normalize to [-1, 1]
-                self.static_rollout_video.update(torch.tensor(normalized_static_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device))
+                self._update_rollout_video(self.static_rollout_video, static_img, static_traj_points, static_traj_actions)
 
                 # update gripper cam video with current state
-                gripper_img = self.env.cameras[1].render()[0].squeeze()
-                gripper_traj_img = draw_trajectory_onto_image(gripper_img, gripper_traj_points, gripper_traj_actions)
-                normalized_gripper_traj_img = gripper_traj_img / 127.5 - 1 # normalize to [-1, 1]
-                self.gripper_rollout_video.update(torch.tensor(normalized_gripper_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device))
-
+                gripper_img, gripper_depth_img = self.env.cameras[1].render()
+                gripper_img = gripper_img.squeeze()
+                
+                gripper_traj_points = self._reproject_gripper_traj_points(gripper_traj_points_world) # .render() updates view_matrix
+                gripper_traj_actions = self._reproject_gripper_traj_actions(gripper_traj_actions_world)
+                
+                self._update_rollout_video(self.gripper_rollout_video, gripper_img, gripper_traj_points, gripper_traj_actions, gripper_dont_draw_line_between)
+                
             # check if current steps solves task
             current_task_info = self.task_oracle.get_task_info_for_set(start_info, current_info, {subtask})
             if len(current_task_info) > 0:
@@ -295,6 +308,59 @@ class ItrapEvaluator:
         self.logger.info(f"Average successful sequence length: {avg_seq_len:.1f}")
         if self.flower_eval_cfg.wandb.log:
             self.wandb_run.log({"avrg_performance/avg_seq_len": avg_seq_len, "avrg_performance/chain_sr": chain_sr, "detailed_metrics/task_info": task_info})
+
+
+    def _update_rollout_video(self, rollout_video, cam_img, traj_points, traj_actions, dont_draw_line_between=None):
+        traj_img = draw_trajectory_onto_image(cam_img, traj_points, traj_actions, dont_draw_line_between)
+        normalized_traj_img = traj_img / 127.5 - 1 # normalize to [-1, 1]
+        normalized_traj_img = torch.tensor(normalized_traj_img).permute(2, 0, 1).unsqueeze(0).unsqueeze(1).to(self.device) # shape: B, F, C, H, W
+        rollout_video.update(normalized_traj_img)
+
+
+    def _deproject_gripper_traj_points(self, gripper_traj_points, gripper_depth_img):
+        self.env.cameras[1].viewMatrix = self.env.cameras[1].view_matrix
+
+        gripper_traj_points_world = []
+        for gripper_traj_point in gripper_traj_points:
+            gripper_traj_point_world = self.env.cameras[1].deproject(gripper_traj_point, gripper_depth_img, homogeneous=True)
+            gripper_traj_points_world.append(gripper_traj_point_world)
+
+        return gripper_traj_points_world
+    
+    
+    def _deproject_gripper_traj_actions(self, gripper_traj_actions, gripper_depth_img):
+        self.env.cameras[1].viewMatrix = self.env.cameras[1].view_matrix
+
+        gripper_traj_actions_world = []
+        for (gripper_traj_point, gripper_traj_action) in gripper_traj_actions:
+            gripper_traj_point_world = self.env.cameras[1].deproject(gripper_traj_point, gripper_depth_img, homogeneous=True)
+            gripper_traj_actions_world.append((gripper_traj_point_world, gripper_traj_action))
+
+        return gripper_traj_actions_world
+    
+    
+    def _reproject_gripper_traj_points(self, gripper_traj_points_world):
+        self.env.cameras[1].viewMatrix = self.env.cameras[1].view_matrix
+        self.env.cameras[1].projectionMatrix = self.env.cameras[1].projection_matrix
+        
+        gripper_traj_points = []
+        for gripper_traj_point_world in gripper_traj_points_world:
+            gripper_traj_point = self.env.cameras[1].project(gripper_traj_point_world)
+            gripper_traj_points.append(gripper_traj_point)
+        
+        return gripper_traj_points
+    
+    
+    def _reproject_gripper_traj_actions(self, gripper_traj_actions_world):
+        self.env.cameras[1].viewMatrix = self.env.cameras[1].view_matrix
+        self.env.cameras[1].projectionMatrix = self.env.cameras[1].projection_matrix
+        
+        gripper_traj_actions = []
+        for (gripper_traj_point_world, gripper_traj_action) in gripper_traj_actions_world:
+            gripper_traj_point = self.env.cameras[1].project(gripper_traj_point_world)
+            gripper_traj_actions.append((gripper_traj_point, gripper_traj_action))
+        
+        return gripper_traj_actions
 
 
 if __name__ == "__main__":

@@ -41,8 +41,8 @@ def parse_vlm_outputs(file_path: str) -> list:
 
 
 def get_alignment_of_gripper_points(pred, label, img_size):
-    gripper_points_pred, _ = extract_gripper_points_and_actions(pred, orig_img_height=img_size, orig_img_width=img_size)
-    gripper_points_label, _ = extract_gripper_points_and_actions(label, orig_img_height=img_size, orig_img_width=img_size)
+    gripper_points_pred, _, _ = extract_gripper_points_and_actions(pred, orig_img_height=img_size, orig_img_width=img_size)
+    gripper_points_label, _, _ = extract_gripper_points_and_actions(label, orig_img_height=img_size, orig_img_width=img_size)
 
     dtw_alignment = dtw(np.array(gripper_points_pred), np.array(gripper_points_label), keep_internals=True, dist_method=lambda p, l: np.linalg.norm(p - l))
     gripper_points_dist = dtw_alignment.normalizedDistance  # cumulative pixel distance normalized by traj lengths
@@ -53,8 +53,8 @@ def get_alignment_of_gripper_points(pred, label, img_size):
 
 
 def get_alignment_of_gripper_actions(pred, label, img_size):
-    _, gripper_actions_pred = extract_gripper_points_and_actions(pred, orig_img_height=img_size, orig_img_width=img_size)
-    _, gripper_actions_label = extract_gripper_points_and_actions(label, orig_img_height=img_size, orig_img_width=img_size)
+    _, gripper_actions_pred, _ = extract_gripper_points_and_actions(pred, orig_img_height=img_size, orig_img_width=img_size)
+    _, gripper_actions_label, _ = extract_gripper_points_and_actions(label, orig_img_height=img_size, orig_img_width=img_size)
 
     if len(gripper_actions_pred) == 0 or len(gripper_actions_label) == 0:
         # no gripper actions in traj => no errors # FIXME: not ideal behavior
