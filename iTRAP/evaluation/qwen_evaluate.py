@@ -67,9 +67,16 @@ def get_alignment_of_gripper_actions(pred, label, img_size):
     _, gripper_actions_pred, _ = extract_gripper_points_and_actions(pred, orig_img_height=img_size, orig_img_width=img_size)
     _, gripper_actions_label, _ = extract_gripper_points_and_actions(label, orig_img_height=img_size, orig_img_width=img_size)
 
-    if len(gripper_actions_pred) == 0 or len(gripper_actions_label) == 0:
-        # no gripper actions in traj => no errors # FIXME: not ideal behavior (implement in fizzbuzz way like for gripper points)
+    # filter edge cases with no gripper actions in pred and/or label (can happen for gripper cam if traj completely out of bounds)
+    if len(gripper_actions_pred) == 0 and len(gripper_actions_label) == 0:
+        # no gripper actions in pred or label => no error
         return 100, 100, gripper_actions_pred, gripper_actions_label
+    elif len(gripper_actions_label) == 0:
+        # no gripper actions only in pred => max error
+        return 0, 0, gripper_actions_pred, gripper_actions_label
+    elif len(gripper_actions_pred) == 0:
+        # no gripper actions only in label => max error
+        return 0, 0, gripper_actions_pred, gripper_actions_label
 
     gripper_actions_cum_dist = 0
     gripper_actions_same_action = []
