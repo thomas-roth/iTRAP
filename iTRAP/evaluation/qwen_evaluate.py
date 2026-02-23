@@ -44,6 +44,17 @@ def get_alignment_of_gripper_points(pred, label, img_size):
     gripper_points_pred, _, _ = extract_gripper_points_and_actions(pred, orig_img_height=img_size, orig_img_width=img_size)
     gripper_points_label, _, _ = extract_gripper_points_and_actions(label, orig_img_height=img_size, orig_img_width=img_size)
 
+    # filter edge cases with no gripper points in pred and/or label (can happen for gripper cam if traj completely out of bounds)
+    if len(gripper_points_pred) == 0 and len(gripper_points_label) == 0:
+        # no gripper points in pred or label => no error
+        return 100, gripper_points_pred, gripper_points_label
+    elif len(gripper_points_label) == 0:
+        # no gripper points only in pred => max error
+        return 0, gripper_points_pred, gripper_points_label
+    elif len(gripper_points_pred) == 0:
+        # no gripper points only in label => max error
+        return 0, gripper_points_pred, gripper_points_label
+
     dtw_alignment = dtw(np.array(gripper_points_pred), np.array(gripper_points_label), keep_internals=True, dist_method=lambda p, l: np.linalg.norm(p - l))
     gripper_points_dist = dtw_alignment.normalizedDistance  # cumulative pixel distance normalized by traj lengths
 
@@ -57,7 +68,7 @@ def get_alignment_of_gripper_actions(pred, label, img_size):
     _, gripper_actions_label, _ = extract_gripper_points_and_actions(label, orig_img_height=img_size, orig_img_width=img_size)
 
     if len(gripper_actions_pred) == 0 or len(gripper_actions_label) == 0:
-        # no gripper actions in traj => no errors # FIXME: not ideal behavior
+        # no gripper actions in traj => no errors # FIXME: not ideal behavior (implement in fizzbuzz way like for gripper points)
         return 100, 100, gripper_actions_pred, gripper_actions_label
 
     gripper_actions_cum_dist = 0

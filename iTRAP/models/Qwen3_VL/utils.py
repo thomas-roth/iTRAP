@@ -215,9 +215,9 @@ def extract_gripper_points_and_actions(response, orig_img_height, orig_img_width
         _log_error(logger, f"Invalid VLM response: {response}. Error msg: {e}. Skipping task")
         return [], []
     
-    gripper_points, gripper_actions, dont_draw_line_between = _clip_gripper_traj_to_image_bounds(gripper_points, gripper_actions, orig_img_height, orig_img_width)
+    gripper_points, points_before_gripper_actions, dont_draw_line_between = _clip_gripper_traj_to_image_bounds(gripper_points, points_before_gripper_actions, orig_img_height, orig_img_width)
     
-    return gripper_points, gripper_actions, dont_draw_line_between
+    return gripper_points, points_before_gripper_actions, dont_draw_line_between
 
 
 def draw_trajectory_onto_image(img, gripper_points, gripper_actions, dont_draw_line_between=None, traj_color="red", thickness=2):
@@ -291,52 +291,42 @@ def _clip_gripper_traj_to_image_bounds(gripper_points, gripper_actions, orig_img
     clipped_gripper_points = []
     clipped_gripper_actions = gripper_actions.copy()
     dont_draw_line_between = []
-    for i in range(len(gripper_points) - 1):
-        clipped_x1, clipped_y1, clipped_x2, clipped_y2 = pylineclip.cohensutherland(xmin=0, xmax=orig_img_width, ymin=0, ymax=orig_img_height, 
+    for i in range(len(gripper_points) - 1): # results in empty list if only single point in original list, should be fine since then no line drawn anyway
+        clipped_x1, clipped_y1, clipped_x2, clipped_y2 = pylineclip.cohensutherland(xmin=0, xmax=orig_img_width-1, ymin=0, ymax=orig_img_height-1, 
                                                                                     x1=gripper_points[i][0], y1=gripper_points[i][1],
                                                                                     x2=gripper_points[i+1][0], y2=gripper_points[i+1][1])
         
-        line_doesnt_intersect_with_image_borders = clipped_x1 is None and clipped_y1 is None and clipped_x2 is None and clipped_y2 is None
-        if line_doesnt_intersect_with_image_borders:
-            first_point_out_of_bounds = gripper_points[i][0] < 0 or gripper_points[i][0] >= orig_img_width or \
-                                        gripper_points[i][1] < 0 or gripper_points[i][1] >= orig_img_height
-            if first_point_out_of_bounds:
-                # line segment completely out of image bounds => skip both points
-                
-                # remove gripper actions associated with the two out-of-bounds points if they exist
-                if gripper_points[i] in gripper_action_points:
-                    gripper_action = [action for point, action in clipped_gripper_actions if point == gripper_points[i]][0]
-                    clipped_gripper_actions.remove((gripper_points[i], gripper_action))
-                if gripper_points[i+1] in gripper_action_points:
-                    gripper_action = [action for point, action in clipped_gripper_actions if point == gripper_points[i+1]][0]
-                    clipped_gripper_actions.remove((gripper_points[i+1], gripper_action))
-                
-                continue
-            else:
-                # line segment completely in image bounds => add both points (if not already added)
-                
-                assert clipped_x1 == gripper_points[i][0] and clipped_y1 == gripper_points[i][1] and \
-                    clipped_x2 == gripper_points[i+1][0] and clipped_y2 == gripper_points[i+1][1], \
-                    "Cohen-Sutherland should not modify the points if they are within bounds"
-                
-                if gripper_points[i] not in clipped_gripper_points:
-                    clipped_gripper_points.append(gripper_points[i])
-                if gripper_points[i+1] not in clipped_gripper_points:
-                    clipped_gripper_points.append(gripper_points[i+1])
-                
-                continue
-        else:
-            # line segment intersects with image borders => add clipped points (if not already added)
+        line_fully_out_of_bounds = clipped_x1 is None and clipped_y1 is None and clipped_x2 is None and clipped_y2 is None
+        if line_fully_out_of_bounds:
+            # line segment completely out of image bounds => skip both points
             
+            # remove gripper actions associated with the two out-of-bounds points if they exist
+            if gripper_points[i] in gripper_action_points:
+                gripper_action = [action for point, action in clipped_gripper_actions if point == gripper_points[i]][0]
+                clipped_gripper_actions.remove((gripper_points[i], gripper_action))
+                gripper_action_points.remove(gripper_points[i])
+            if gripper_points[i+1] in gripper_action_points:
+                gripper_action = [action for point, action in clipped_gripper_actions if point == gripper_points[i+1]][0]
+                clipped_gripper_actions.remove((gripper_points[i+1], gripper_action))
+                gripper_action_points.remove(gripper_points[i+1])
+            
+            continue
+        
+        curr_first_point_clipped_to_any_border = (clipped_x1, clipped_y1) != gripper_points[i]
+        curr_second_point_clipped_to_any_border = (clipped_x2, clipped_y2) != gripper_points[i+1]
+        if curr_first_point_clipped_to_any_border or curr_second_point_clipped_to_any_border:
+            # line segment intersects with image borders => add clipped points
+            
+            # clipped points may be floats, but need to be ints for cv2 drawing functions
+            clipped_x1 = round(clipped_x1)
+            clipped_y1 = round(clipped_y1)
+            clipped_x2 = round(clipped_x2)
+            clipped_y2 = round(clipped_y2)
+            
+            # avoid drawing lines along the border for out-of-bounds lines
             last_added_point_clipped_to_any_border = (len(clipped_gripper_points) > 0) and \
                 ((clipped_gripper_points[-1][0] == 0) or (clipped_gripper_points[-1][0] == orig_img_width - 1) or 
                  (clipped_gripper_points[-1][1] == 0) or (clipped_gripper_points[-1][1] == orig_img_height - 1))
-            curr_first_point_clipped_to_any_border = \
-                ((clipped_x1 == 0) or (clipped_x1 == orig_img_width - 1) or
-                 (clipped_y1 == 0) or (clipped_y1 == orig_img_height - 1))
-            curr_second_point_clipped_to_any_border = \
-                ((clipped_x2 == 0) or (clipped_x2 == orig_img_width - 1) or
-                 (clipped_y2 == 0) or (clipped_y2 == orig_img_height - 1))
             if last_added_point_clipped_to_any_border:
                 if curr_first_point_clipped_to_any_border:
                     # don't draw line between last added point & current 1st point
@@ -344,18 +334,27 @@ def _clip_gripper_traj_to_image_bounds(gripper_points, gripper_actions, orig_img
                 elif curr_second_point_clipped_to_any_border:
                     # don't draw line between last added point & current 2nd point
                     dont_draw_line_between.append((clipped_gripper_points[-1], (clipped_x2, clipped_y2)))
-            
-            if (clipped_x1, clipped_y1) not in clipped_gripper_points:
-                clipped_gripper_points.append((clipped_x1, clipped_y1))
-            if (clipped_x2, clipped_y2) not in clipped_gripper_points:
-                clipped_gripper_points.append((clipped_x2, clipped_y2))
-            
+
             # remove gripper actions associated with the out-of-bounds points if they exist
-            if (clipped_x1, clipped_y1) != gripper_points[i] and gripper_points[i] in gripper_action_points:
+            if curr_first_point_clipped_to_any_border and gripper_points[i] in gripper_action_points:
                 gripper_action = [action for point, action in clipped_gripper_actions if point == gripper_points[i]][0]
                 clipped_gripper_actions.remove((gripper_points[i], gripper_action))
-            if (clipped_x2, clipped_y2) != gripper_points[i+1] and gripper_points[i+1] in gripper_action_points:
+                gripper_action_points.remove(gripper_points[i])
+            if curr_second_point_clipped_to_any_border and gripper_points[i+1] in gripper_action_points:
                 gripper_action = [action for point, action in clipped_gripper_actions if point == gripper_points[i+1]][0]
                 clipped_gripper_actions.remove((gripper_points[i+1], gripper_action))
+                gripper_action_points.remove(gripper_points[i+1])
+        else:
+            # line segment completely in image bounds => add both points
+            
+            assert clipped_x1 == gripper_points[i][0] and clipped_y1 == gripper_points[i][1] and \
+                clipped_x2 == gripper_points[i+1][0] and clipped_y2 == gripper_points[i+1][1], \
+                "Cohen-Sutherland should not modify the points if the connecting line is completely within bounds"
+        
+        # add clipped points if not already added
+        if (clipped_x1, clipped_y1) not in clipped_gripper_points:
+            clipped_gripper_points.append((clipped_x1, clipped_y1))
+        if (clipped_x2, clipped_y2) not in clipped_gripper_points:
+            clipped_gripper_points.append((clipped_x2, clipped_y2))           
     
     return clipped_gripper_points, clipped_gripper_actions, dont_draw_line_between
