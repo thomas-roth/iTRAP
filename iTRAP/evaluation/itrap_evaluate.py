@@ -183,7 +183,7 @@ class ItrapEvaluator:
         static_img_start = self.env.cameras[0].render()[0].squeeze()
         gripper_img_start, gripper_depth_img = self.env.cameras[1].render()
         gripper_img_start = gripper_img_start.squeeze()
-        vlm_responses = query_vlm(static_img_start, gripper_img_start, self.vlm_client, subtask, single_query=True)
+        vlm_responses = query_vlm(static_img_start, gripper_img_start, self.vlm_client, goal["lang_text"], single_query=True)
         static_traj_points, static_traj_actions, _ = extract_gripper_points_and_actions(vlm_responses["static"], static_img_start.shape[0],
                                                                                                      static_img_start.shape[1], logger=self.logger)
         gripper_traj_points, gripper_traj_actions, gripper_dont_draw_line_between = extract_gripper_points_and_actions(vlm_responses["gripper"], gripper_img_start.shape[0],
@@ -218,7 +218,7 @@ class ItrapEvaluator:
                 untransformed_gripper_img, gripper_depth_img = self.env.cameras[1].render()
                 untransformed_gripper_img = untransformed_gripper_img.squeeze()
                 
-                vlm_responses = query_vlm(untransformed_static_img, untransformed_gripper_img, self.vlm_client, subtask)
+                vlm_responses = query_vlm(untransformed_static_img, untransformed_gripper_img, self.vlm_client, goal["lang_text"])
                 static_traj_points, static_traj_actions, _ = extract_gripper_points_and_actions(vlm_responses["static"], untransformed_static_img.shape[0],
                                                                                                              untransformed_static_img.shape[1], logger=self.logger)
                 gripper_traj_points, gripper_traj_actions, gripper_dont_draw_line_between = extract_gripper_points_and_actions(vlm_responses["gripper"], untransformed_gripper_img.shape[0],
@@ -365,7 +365,7 @@ class ItrapEvaluator:
 
 if __name__ == "__main__":
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     itrap_evaluator = ItrapEvaluator()
     itrap_evaluator.evaluate_itrap()
