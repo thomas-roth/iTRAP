@@ -12,8 +12,10 @@ from tqdm import tqdm
 
 from calvin_dataset_builder import CalvinDatasetBuilder
 
-# add calvin_env to path
-sys.path.append(str(Path(__file__).absolute().parents[2] / "models" / "flower_vla_calvin" / "calvin_env"))
+sys.path.append(str(Path(__file__).absolute().parents[2] / "models" / "flower_vla_calvin" / "calvin_env")) # add calvin_env to path
+
+sys.path.append(str(Path(__file__).absolute().parents[3])) # add iTRAP to path
+from iTRAP.models.Qwen3_VL.utils import project_traj_points_from_world_to_cam
 
 
 class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
@@ -41,7 +43,7 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
         self.save_first_img_per_seq = False
         self.save_gif_per_seq = False
 
-        self._logger.info(f"Initialized CalvinPolicyDatasetBuilder")
+        self._logger.info("Initialized CalvinPolicyDatasetBuilder")
 
 
     def _draw_trajectory_onto_img(self, img, gripper_centers, gripper_widths):
@@ -77,7 +79,7 @@ class CalvinPolicyDatasetBuilder(CalvinDatasetBuilder):
                 # only update gripper cam for each timestep (only gripper cam moves)
                 if timestep == 0 or cam_name == "rgb_gripper":
                     self.env.step(self.curr_seq["obs"]["rel_actions"][timestep]) # move gripper to position at timestep to update camera view matrix
-                    simplified_gripper_centers_projected = self._project_gripper_centers_to_cam(gripper_centers_world, cam_id)
+                    simplified_gripper_centers_projected = project_traj_points_from_world_to_cam(gripper_centers_world, self.env, cam_id)
 
                 img = self.curr_seq["obs"][cam_name][timestep]
                 img_with_traj = self._draw_trajectory_onto_img(img, simplified_gripper_centers_projected, gripper_widths)

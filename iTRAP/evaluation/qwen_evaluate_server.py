@@ -46,49 +46,35 @@ def main(eval_dataset_path: str, val_imgs_dir: str, draw_trajectories=False):
             if f.endswith(('.png', '.jpg', '.jpeg')) and cam in f
         ])
     
-    img_arrs = {}
-    img_sizes = {}
-    traj_points_preds = {}
-    traj_points_labels = {}
-    traj_actions_preds = {}
-    traj_actions_labels = {}
-    traj_points_pos_scores = {"static": [], "gripper": []}
-    traj_actions_pos_scores = {"static": [], "gripper": []}
-    traj_actions_type_scores = {"static": [], "gripper": []}
-    traj_total_scores = {"static": [], "gripper": []}
+    traj_points_pos_scores = []
+    traj_actions_pos_scores = []
+    traj_actions_type_scores = []
+    traj_total_scores = []
     for i, (eval_ds_entry, static_img_path, gripper_img_path) in tqdm(enumerate(zip(eval_dataset, dataset_val["static"], dataset_val["gripper"])), total=len(dataset_val["static"]), desc="Evaluating VLM outputs"):
-        img_arrs["static"] = cv2.cvtColor(cv2.imread(static_img_path), cv2.COLOR_BGR2RGB)
-        assert img_arrs["static"].shape[0] == img_arrs["static"].shape[1]
-        img_sizes["static"] = img_arrs["static"].shape[0]
+        static_img = cv2.cvtColor(cv2.imread(static_img_path), cv2.COLOR_BGR2RGB)
+        assert static_img.shape[0] == static_img.shape[1]
 
-        img_arrs["gripper"] = cv2.cvtColor(cv2.imread(gripper_img_path), cv2.COLOR_BGR2RGB)
-        assert img_arrs["gripper"].shape[0] == img_arrs["gripper"].shape[1]
-        img_sizes["gripper"] = img_arrs["gripper"].shape[0]
+        gripper_img = cv2.cvtColor(cv2.imread(gripper_img_path), cv2.COLOR_BGR2RGB)
+        assert gripper_img.shape[0] == gripper_img.shape[1]
 
         task = static_img_path.split("_static.png")[0].split("validation/")[1][5:]
         task_text = eval_ds_entry["prompt"].split("<prompt>")[1].split("</prompt>")[0]
         
-        vlm_outputs_predict = query_vlm(img_arrs["static"], img_arrs["gripper"], vlm_client, task_text, single_query=True)
-
-        vlm_outputs_label = eval_ds_entry["label"]
+        vlm_output_predict = query_vlm(static_img, gripper_img, vlm_client, task_text)
+        vlm_output_label = eval_ds_entry["label"]
         
-        for cam in ["static", "gripper"]:
-            points_pos_score, points_pred, points_label = get_alignment_of_gripper_points(vlm_outputs_predict[cam], vlm_outputs_label[cam], img_sizes[cam])
-            actions_pos_score, actions_type_score, actions_pred, actions_label = get_alignment_of_gripper_actions(vlm_outputs_predict[cam], vlm_outputs_label[cam], img_sizes[cam])
-            total_score = (points_pos_score + actions_pos_score + actions_type_score) / 3
-            
-            traj_points_preds[cam] = points_pred
-            traj_points_labels[cam] = points_label
-            traj_actions_preds[cam] = actions_pred
-            traj_actions_labels[cam] = actions_label
-            
-            traj_points_pos_scores[cam].append(points_pos_score)
-            traj_actions_pos_scores[cam].append(actions_pos_score)
-            traj_actions_type_scores[cam].append(actions_type_score)
-            traj_total_scores[cam].append(total_score)
-            
-            if draw_trajectories:
-                build_and_save_trajectory_images(output_dir, img_arrs[cam], points_pred, actions_pred, points_label, actions_label, task, total_score, cam, output_nr=i)
+        points_pos_score, points_pred, points_label = get_alignment_of_gripper_points(vlm_output_predict, vlm_output_label)
+        actions_pos_score, actions_type_score, actions_pred, actions_label = get_alignment_of_gripper_actions(vlm_output_predict, vlm_output_label)
+        total_score = (points_pos_score + actions_pos_score + actions_type_score) / 3
+        
+        traj_points_pos_scores.append(points_pos_score)
+        traj_actions_pos_scores.append(actions_pos_score)
+        traj_actions_type_scores.append(actions_type_score)
+        traj_total_scores.append(total_score)
+        
+        if draw_trajectories:
+            build_and_save_trajectory_images(output_dir, static_img, points_pred, actions_pred, points_label, actions_label, task, total_score, "static", output_nr=i)
+            build_and_save_trajectory_images(output_dir, gripper_img, points_pred, actions_pred, points_label, actions_label, task, total_score, "gripper", output_nr=i)
     
     print_results(output_dir, traj_points_pos_scores["static"], traj_actions_pos_scores["static"], traj_actions_type_scores["static"], traj_total_scores["static"],
                   traj_points_pos_scores["gripper"], traj_actions_pos_scores["gripper"], traj_actions_type_scores["gripper"], traj_total_scores["gripper"])
@@ -97,4 +83,4 @@ def main(eval_dataset_path: str, val_imgs_dir: str, draw_trajectories=False):
 if __name__ == '__main__':
     main(eval_dataset_path="/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/2026_02_19-unfrozen_vision_tower-longer_training/generated_predictions.jsonl",
          val_imgs_dir="/DATA/troth/iTRAP/data/calvin_vlm_dataset/2025-11-17_21-08-09_qwen3_both-cams_single-query_static-traj-only/validation", # old but only for imgs & last one where imgs created
-         draw_trajectories=True)
+         draw_trajectories=False) # TODO: draw_trajectories=True currently fails bc of missing view & projection matrices for drawing trajectories onto images (see other TODO)

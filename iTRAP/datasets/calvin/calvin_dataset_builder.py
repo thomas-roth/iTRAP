@@ -58,22 +58,6 @@ class CalvinDatasetBuilder(ABC):
         return gripper_centers_simplified, gripper_widths_simplified
 
 
-    def _project_gripper_centers_to_cam(self, gripper_centers_world, cam_id):
-        # TODO: handle rare massive outliers in gripper cam
-
-        if cam_id == 1:
-            # fix different names of projection & view matrices between static & gripper cam
-            self.env.cameras[cam_id].projectionMatrix = self.env.cameras[cam_id].projection_matrix
-            del self.env.cameras[cam_id].projection_matrix
-            self.env.cameras[cam_id].viewMatrix = self.env.cameras[cam_id].view_matrix
-            del self.env.cameras[cam_id].view_matrix
-
-        gripper_centers_world_ones = np.c_[np.array(gripper_centers_world), np.ones(len(gripper_centers_world))]
-        gripper_centers_projected = self.env.cameras[cam_id].project(gripper_centers_world_ones.T)
-
-        return np.transpose(gripper_centers_projected)
-
-
     def _build_trajectories(self, dataset_split):
         env_conf = OmegaConf.load(f"{self.dataset_path}/{dataset_split}/.hydra/merged_config.yaml")
         del env_conf.cameras["tactile"] # not relevant for the Policy & VLM datasets and breaks hydra instantiation
@@ -112,8 +96,8 @@ class CalvinDatasetBuilder(ABC):
             traj_representations = self.build_trajectory_representation(simplified_gripper_centers_world, simplified_gripper_widths)
             if traj_representations.keys() == {"traj_imgs_seq"}:
                 traj_imgs_all_seqs.append(traj_representations["traj_imgs_seq"])
-            elif traj_representations.keys() == {"traj_strings_seq", "start_imgs_seq"}:
-                traj_strings_all_seqs.append(traj_representations["traj_strings_seq"])
+            elif traj_representations.keys() == {"traj_string_seq", "start_imgs_seq"}:
+                traj_strings_all_seqs.append(traj_representations["traj_string_seq"])
                 start_imgs_all_seqs.append(traj_representations["start_imgs_seq"])
             else:
                 raise ValueError(f"Unexpected keys in traj_representations when building trajectories: {traj_representations.keys()}")

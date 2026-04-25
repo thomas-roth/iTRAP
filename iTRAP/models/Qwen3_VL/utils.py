@@ -2,17 +2,13 @@ import base64
 import io
 import logging
 import os
-from pathlib import Path
 import re
-import sys
 from PIL import Image
 import cv2
 from openai import OpenAI
 from termcolor import colored
 import pylineclip
-
-sys.path.append(str(Path(__file__).absolute().parents[3])) # Add repo root to path
-from iTRAP.models.Qwen3_VL.resize_utils import resize_point_back_to_original_for_qwen3_vl
+import numpy as np
 
 
 
@@ -26,25 +22,15 @@ def setup_vlm_client():
     return client
 
 
-def get_prompt(task: str, cam:str=None, single_query=False) -> str:
-    if single_query:
-        return f"<image><image>The images show two views of the same scene. In the images, please execute the command described in <prompt>{task.replace('_', ' ')}</prompt>. " \
-                "Provide two sequences of points denoting the trajectory of a robot gripper in each of the views to achieve the goal. " \
-                "Format your answer as two lists of tuples each enclosed by <ans> and </ans> tags. For example: <ans>[(x_1, y_1), (x_2, y_2), " \
-                "(x_3, y_3), <action>Open Gripper</action>, (x_4, y_4), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
-                "an x and y location of the end effector of the gripper in one of the images. The action tags indicate the gripper action."
-    else:
-        if cam != "static" and cam != "gripper":
-            raise ValueError(f"Invalid cam type {cam} for prompt generation")
-        
-        return f"<image>The image shows the view from the {cam} camera of the scene. In the image, please execute the command described in <prompt>{task.replace('_', ' ')}</prompt>. " \
-                "Provide a sequence of points denoting the trajectory of a robot gripper to achieve the goal. " \
-                "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(x_1, y_1), (x_2, y_2), " \
-                "(x_3, y_3), <action>Open Gripper</action>, (x_4, y_4), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
-                "an x and y location of the end effector of the gripper in the image. The action tags indicate the gripper action."
+def get_prompt(task: str) -> str:
+    return f"<image><image>The images show two views of the same scene. In the images, please execute the command described in <prompt>{task.replace('_', ' ')}</prompt>. " \
+            "Provide a sequence of points denoting the trajectory of a robot gripper in world space to achieve the goal. " \
+            "Format your answer as a list of tuples enclosed by <ans> and </ans> tags. For example: <ans>[(x_1, y_1, z_1), (x_2, y_2, z_2), " \
+            "(x_3, y_3, z_3), <action>Open Gripper</action>, (x_4, y_4, z_4), <action>Close Gripper</action>, ...]</ans>. Each tuple denotes " \
+            "an x, y and z location of the end effector of the gripper in world space. The action tags indicate the gripper action."
 
 
-def query_vlm(static_img_start, gripper_img_start, vlm_client, task, single_query=False):
+def query_vlm(static_img_start, gripper_img_start, vlm_client, task):
     # get base64 encoded image of first frame of static camera
     img_buffer = io.BytesIO()
     Image.fromarray(static_img_start).save(img_buffer, format="PNG")
@@ -58,91 +44,42 @@ def query_vlm(static_img_start, gripper_img_start, vlm_client, task, single_quer
     Image.fromarray(gripper_img_start).save(img_buffer, format="PNG")
     base64_gripper_img = base64.b64encode(img_buffer.getvalue()).decode("utf-8")
 
-    responses = {}
-    if single_query:
-        prompt = get_prompt(task, single_query=True)
-        
-        # send request to vlm
-        response_single_query = vlm_client.chat.completions.create(
-            model="qwen3_vl",
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt
-                    },{
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{base64_static_img}"
-                        }
-                    },{
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{base64_gripper_img}"
-                        }
+    prompt = get_prompt(task)
+    
+    # send request to vlm
+    response_single_query = vlm_client.chat.completions.create(
+        model="qwen3_vl",
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": prompt
+                },{
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{base64_static_img}"
                     }
-                ]
-            }],
-            temperature=0.7, # matches SFT generation temp
-        )
-        
-        assert "\n" in response_single_query.choices[0].message.content, "Expected two answers separated by newline for single VLM query with two views"
-        responses["static"] = response_single_query.choices[0].message.content.split("\n")[0]
-        responses["gripper"] = response_single_query.choices[0].message.content.split("\n")[1]
-    else:
-
-        prompt_static = get_prompt(task, cam="static")
-        prompt_gripper = get_prompt(task, cam="gripper")
-        
-        # send requests to vlm
-        response_static = vlm_client.chat.completions.create(
-            model="qwen3_vl",
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt_static
-                    },{
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{base64_static_img}"
-                        }
+                },{
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{base64_gripper_img}"
                     }
-                ]
-            }],
-            temperature=0.7, # matches SFT generation temp
-        )
-        responses["static"] = response_static.choices[0].message.content
+                }
+            ]
+        }],
+        temperature=0.7, # matches SFT generation temp
+    )
+    
+    response = response_single_query.choices[0].message.content
 
-        response_gripper = vlm_client.chat.completions.create(
-            model="qwen3_vl",
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt_gripper
-                    },{
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{base64_gripper_img}"
-                        }
-                    }
-                ]
-            }],
-            temperature=0.7, # matches SFT generation temp
-        )
-        responses["gripper"] = response_gripper.choices[0].message.content
-
-    return responses
+    return response
 
 
-def extract_gripper_points_and_actions(response, orig_img_height, orig_img_width, logger=None, stretch_factor=1.0):
+def extract_gripper_points_and_actions(response, logger=None):
     regex_ans = r"<ans>(.*?)</ans>"
     regex_ans_no_end = r"<ans>(.*)"
-    regex_gripper_points = r"\(([0-9.]+),\s*([0-9.]+)\)"
+    regex_gripper_points = r"\(([-0-9.]+),\s*([-0-9.]+),\s*([-0-9.]+)\)"
     regex_gripper_actions = r"<action>(.*?)</action>"
 
     try:
@@ -166,26 +103,11 @@ def extract_gripper_points_and_actions(response, orig_img_height, orig_img_width
                 _log_error(logger, f"Invalid gripper point in response: {response_content}. Skipping match")
                 continue
 
-            x = int(match.group(1))
-            y = int(match.group(2))
+            x = float(match.group(1))
+            y = float(match.group(2))
+            z = float(match.group(3))
 
-            # resize coords from Qwen3-VL internal size to original size
-            x, y = resize_point_back_to_original_for_qwen3_vl((x, y), orig_img_height, orig_img_width)
-
-            if i > 0 and stretch_factor != 1.0:
-                x_start = gripper_points[0][0]
-                y_start = gripper_points[0][1]
-
-                # stretch coord points (start point stays the same, end point stretched by stretch factor, points in between stretched accordingly)
-                progression = i / (len(list(re.finditer(regex_gripper_points, response_content))) - 1)
-                x = x_start + (x - x_start) * (1.0 + (stretch_factor - 1.0) * progression)
-                y = y_start + (y - y_start) * (1.0 + (stretch_factor - 1.0) * progression)
-
-                # make sure strected coords aren't out of bounds
-                x = max(0.0, min(1.0, x))
-                y = max(0.0, min(1.0, y))
-
-            gripper_points.append((x, y))
+            gripper_points.append((x, y, z))
         
         gripper_actions = []
         for match in re.finditer(regex_gripper_actions, response_content):
@@ -214,36 +136,63 @@ def extract_gripper_points_and_actions(response, orig_img_height, orig_img_width
     except Exception as e:
         _log_error(logger, f"Invalid VLM response: {response}. Error msg: {e}. Skipping task")
         return [], []
-    
-    gripper_points, points_before_gripper_actions, dont_draw_line_between = _clip_gripper_traj_to_image_bounds(gripper_points, points_before_gripper_actions, orig_img_height, orig_img_width)
-    
-    return gripper_points, points_before_gripper_actions, dont_draw_line_between
-
-
-def draw_trajectory_onto_image(img, gripper_points, gripper_actions, dont_draw_line_between=None, traj_color="red", thickness=2):
-    if gripper_points == []:
-        # gripper_actions is then empty as well, error msg already printed in extract_gripper_points
-        return img
         
-    assert (img.shape[0] == STATIC_IMG_SIZE and img.shape[1] == STATIC_IMG_SIZE or
-            img.shape[0] == GRIPPER_IMG_SIZE and img.shape[1] == GRIPPER_IMG_SIZE), \
-            f"Image size {img.shape[0]}x{img.shape[1]} not supported for drawing trajectory"
+    return gripper_points, points_before_gripper_actions
+
+
+def project_traj_points_from_world_to_cam(traj_points_world, env, cam_id):
+    # TODO: handle rare massive outliers in gripper cam
+
+    if cam_id == 1:
+        # fix different names of projection & view matrices between static & gripper cam
+        env.cameras[cam_id].projectionMatrix = env.cameras[cam_id].projection_matrix
+        del env.cameras[cam_id].projection_matrix
+        env.cameras[cam_id].viewMatrix = env.cameras[cam_id].view_matrix
+        del env.cameras[cam_id].view_matrix
+
+    traj_points_world_ones = np.c_[np.array(traj_points_world), np.ones(len(traj_points_world))]
+    traj_points_projected = env.cameras[cam_id].project(traj_points_world_ones.T)
+
+    return np.transpose(traj_points_projected)
+
+
+def project_traj_actions_from_world_to_cam(traj_actions_world, env, cam_id):
+    points_world = [point for point, _ in traj_actions_world]
+    actions = [action for _, action in traj_actions_world]
+    
+    points_projected = project_traj_points_from_world_to_cam(points_world, env, cam_id)
+    
+    return list(zip(points_projected, actions))
+
+
+def draw_trajectory_onto_image(img, traj_points_world, traj_actions_world, env, traj_color="red", thickness=2):
+    if traj_points_world == []:
+        # traj_actions is then empty as well, error msg already printed in extract_gripper_points
+        return img
+    
+    if img.shape[0] == STATIC_IMG_SIZE and img.shape[1] == STATIC_IMG_SIZE:
+        cam_id = 0
+    elif img.shape[0] == GRIPPER_IMG_SIZE and img.shape[1] == GRIPPER_IMG_SIZE:
+        cam_id = 1
+    else:
+        raise ValueError(f"Image size {img.shape[0]}x{img.shape[1]} not supported for drawing trajectory")
+    
+    traj_points_projected = project_traj_points_from_world_to_cam(traj_points_world, env, cam_id)
+    traj_actions_projected = project_traj_actions_from_world_to_cam(traj_actions_world, env, cam_id)
     
     img_copy = img.copy()
 
-    for i in range(len(gripper_points) - 1):
+    for i in range(len(traj_points_world) - 1):
         if traj_color == "red":
-            color = (round((i+1) / len(gripper_points) * 255), 0, 0) # black to red over time
+            color = (round((i+1) / len(traj_points_projected) * 255), 0, 0) # black to red over time
         elif traj_color == "green":
-            color = (0, round((i+1) / len(gripper_points) * 255), 0) # black to green over time
+            color = (0, round((i+1) / len(traj_points_projected) * 255), 0) # black to green over time
         else:
-            color = (0, 0, round((i+1) / len(gripper_points) * 255)) # black to blue over time
+            color = (0, 0, round((i+1) / len(traj_points_projected) * 255)) # black to blue over time
         
-        if dont_draw_line_between is None or \
-            (gripper_points[i], gripper_points[i+1]) not in dont_draw_line_between: 
-            cv2.line(img_copy, gripper_points[i], gripper_points[i+1], color, thickness)
+        cv2.line(img_copy, traj_points_projected[i], traj_points_projected[i+1], color, thickness)
 
-    for point, action in gripper_actions:
+    for point, action in traj_actions_projected:
         circle_outer_radius = 2 * thickness
         if action == "Close Gripper":
             # green circle
@@ -284,6 +233,7 @@ def _log_warning(logger, msg):
 
 
 def _clip_gripper_traj_to_image_bounds(gripper_points, gripper_actions, orig_img_width, orig_img_height):
+    # TODO: figure out if still needed or if traj drawing works as is
     # uses Cohen-Sutherland line clipping algorithm
     
     gripper_action_points = [point for point, action in gripper_actions]
