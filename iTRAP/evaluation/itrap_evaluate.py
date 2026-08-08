@@ -181,8 +181,7 @@ class ItrapEvaluator:
 
         # get trajectory points & actions from initial state of scene & robot (static camera image untransformed as render() used instead of get_obs())
         static_img_start = self.env.cameras[0].render()[0].squeeze()
-        gripper_img_start, gripper_depth_img = self.env.cameras[1].render()
-        gripper_img_start = gripper_img_start.squeeze()
+        gripper_img_start = self.env.cameras[1].render()[0].squeeze()
         vlm_response = query_vlm(static_img_start, gripper_img_start, self.vlm_client, goal["lang_text"])
         traj_points_world, traj_actions_world = extract_gripper_points_and_actions(vlm_response, logger=self.logger)
 
@@ -208,8 +207,7 @@ class ItrapEvaluator:
             if step == self.flower_eval_cfg.ep_len / 2:
                 # query vlm again to help robot out of wrong state
                 untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
-                untransformed_gripper_img, gripper_depth_img = self.env.cameras[1].render()
-                untransformed_gripper_img = untransformed_gripper_img.squeeze()
+                untransformed_gripper_img = self.env.cameras[1].render()[0].squeeze()
                 
                 vlm_response = query_vlm(untransformed_static_img, untransformed_gripper_img, self.vlm_client, goal["lang_text"])
                 traj_points_world, traj_actions_world = extract_gripper_points_and_actions(vlm_response, logger=self.logger)
@@ -223,8 +221,7 @@ class ItrapEvaluator:
             if step % self.policy.multistep == 0:
                 # model predicts multistep actions per step => only draw trajectory once per multistep
                 untransformed_static_img = self.env.cameras[0].render()[0].squeeze()
-                untransformed_gripper_img, gripper_depth_img = self.env.cameras[1].render()
-                untransformed_gripper_img = untransformed_gripper_img.squeeze()
+                untransformed_gripper_img = self.env.cameras[1].render()[0].squeeze()
 
                 untransformed_static_traj_img = draw_trajectory_onto_image(untransformed_static_img, traj_points_world, traj_actions_world, self.env)
                 untransformed_gripper_traj_img = draw_trajectory_onto_image(untransformed_gripper_img, traj_points_world, traj_actions_world, self.env)
@@ -249,9 +246,7 @@ class ItrapEvaluator:
                 self._update_rollout_video(self.static_rollout_video, static_img, traj_points_world, traj_actions_world)
 
                 # update gripper cam video with current state
-                gripper_img, gripper_depth_img = self.env.cameras[1].render()
-                gripper_img = gripper_img.squeeze()
-                
+                gripper_img = self.env.cameras[1].render()[0].squeeze()
                 self._update_rollout_video(self.gripper_rollout_video, gripper_img, traj_points_world, traj_actions_world)
                 
             # check if current steps solves task
@@ -298,7 +293,7 @@ class ItrapEvaluator:
 
 if __name__ == "__main__":
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     itrap_evaluator = ItrapEvaluator()
     itrap_evaluator.evaluate_itrap()

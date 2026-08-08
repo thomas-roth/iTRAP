@@ -143,12 +143,14 @@ def extract_gripper_points_and_actions(response, logger=None):
 def project_traj_points_from_world_to_cam(traj_points_world, env, cam_id):
     # TODO: handle rare massive outliers in gripper cam
 
+    if len(traj_points_world) == 0:
+        return []
+
     if cam_id == 1:
         # fix different names of projection & view matrices between static & gripper cam
+        # always update because gripper camera moves and recalculates these every frame
         env.cameras[cam_id].projectionMatrix = env.cameras[cam_id].projection_matrix
-        del env.cameras[cam_id].projection_matrix
         env.cameras[cam_id].viewMatrix = env.cameras[cam_id].view_matrix
-        del env.cameras[cam_id].view_matrix
 
     traj_points_world_ones = np.c_[np.array(traj_points_world), np.ones(len(traj_points_world))]
     traj_points_projected = env.cameras[cam_id].project(traj_points_world_ones.T)
@@ -157,6 +159,9 @@ def project_traj_points_from_world_to_cam(traj_points_world, env, cam_id):
 
 
 def project_traj_actions_from_world_to_cam(traj_actions_world, env, cam_id):
+    if len(traj_actions_world) == 0:
+        return []
+    
     points_world = [point for point, _ in traj_actions_world]
     actions = [action for _, action in traj_actions_world]
     
@@ -166,7 +171,7 @@ def project_traj_actions_from_world_to_cam(traj_actions_world, env, cam_id):
 
 
 def draw_trajectory_onto_image(img, traj_points_world, traj_actions_world, env, traj_color="red", thickness=2):
-    if traj_points_world == []:
+    if len(traj_points_world) == 0:
         # traj_actions is then empty as well, error msg already printed in extract_gripper_points
         return img
     

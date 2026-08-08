@@ -47,8 +47,8 @@ def get_alignment_of_gripper_points(pred, label):
 
 
 def get_alignment_of_gripper_actions(pred, label):
-    _, gripper_actions_pred, _ = extract_gripper_points_and_actions(pred)
-    _, gripper_actions_label, _ = extract_gripper_points_and_actions(label)
+    _, gripper_actions_pred = extract_gripper_points_and_actions(pred)
+    _, gripper_actions_label = extract_gripper_points_and_actions(label)
 
     # filter edge cases with no gripper actions in pred and/or label (can happen for gripper cam if traj completely out of bounds)
     if len(gripper_actions_pred) == 0 and len(gripper_actions_label) == 0:
@@ -186,6 +186,6 @@ def main(gen_preds_path: str, val_imgs_dir: str, draw_trajectories=False):
 
 
 if __name__ == '__main__':
-    main(gen_preds_path="/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/2026_02_19-unfrozen_vision_tower-longer_training/generated_predictions.jsonl",
+    main(gen_preds_path="/home/troth/code/hiwi/iTRAP/iTRAP/models/Qwen3_VL/pretrained/2026_05_01-re_itrap/merged_best/generated_predictions.jsonl",
          val_imgs_dir="/DATA/troth/iTRAP/data/calvin_vlm_dataset/2025-11-17_21-08-09_qwen3_both-cams_single-query_static-traj-only/validation", # old but only for imgs & last one where imgs created
          draw_trajectories=False) # TODO: draw_trajectories=True currently fails bc of missing view & projection matrices for drawing trajectories onto images (see other TODO)
