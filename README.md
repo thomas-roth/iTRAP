@@ -54,10 +54,15 @@ sudo apt install -y libx11-dev mesa-common-dev libegl1-mesa-dev libgl1-mesa-dev
 git clone --recurse-submodules git@github.com:thomas-roth/iTRAP.git
 export ITRAP_ROOT=$(pwd)/iTRAP
 cd $ITRAP_ROOT
-conda create -n itrap python=3.9 -y
-conda activate itrap
-sh install_packages.sh
+bash install_packages.sh
 ```
+
+`install_packages.sh` installs [uv](https://docs.astral.sh/uv/) if it is missing, creates a virtual environment with Python 3.11.14 in `.venv` and installs all dependencies from `pyproject.toml` with `uv sync`. Activate the environment before you run any script:
+```bash
+source $ITRAP_ROOT/.venv/bin/activate
+```
+
+The dependency set is pinned to a single, resolvable combination: Torch 2.8.0 (required by vLLM 0.11.0), NumPy 1.26.4 and `transformers` 4.57.x. The LIBERO benchmark is not used by iTRAP but is still installed in editable mode; install its extra dependencies manually if you need it.
 
 
 ## Usage
@@ -93,7 +98,7 @@ To train the policy on CALVIN, follow the steps below:
 3. Adjust the training parameters in the config files ([main config](iTRAP/models/flower_vla_calvin/conf/config_calvin.yaml), [checkpoint path, optimizer & lr scheduler](iTRAP/models/flower_vla_calvin/conf/model/flower.yaml), [rollout config](iTRAP/models/flower_vla_calvin/conf/callbacks/rollout_lh/calvin.yaml)).
 4. Start the VLM server in a separate terminal (required during rollout):
     ```bash
-    conda activate itrap
+    source $ITRAP_ROOT/.venv/bin/activate
     sh iTRAP/models/Qwen3_VL/start_vlm_server.sh
     ```
 5. Start the training:
@@ -104,11 +109,11 @@ To train the policy on CALVIN, follow the steps below:
 ### Evaluation
 To evaluate the model, two terminal sessions need to be started. Start the VLM server in the first terminal:
 ```bash
-conda activate itrap
+source $ITRAP_ROOT/.venv/bin/activate
 sh iTRAP/models/Qwen3_VL/start_vlm_server.sh
 ```
 Start the evaluation script in the second terminal:
 ```bash
-conda activate itrap
+source $ITRAP_ROOT/.venv/bin/activate
 python iTRAP/evaluation/itrap_evaluate.py
 ```
