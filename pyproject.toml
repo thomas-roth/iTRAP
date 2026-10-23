@@ -1,0 +1,64 @@
+[project]
+name = "itrap"
+version = "0.1.0"
+description = "Image-space trajectory planning for vision-language-guided robot manipulation"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    # VLM (Qwen3-VL server)
+    "vllm==0.11.0",
+    "transformers>4.57.0,<5",
+    "openai",
+
+    # Policy (flower_vla_calvin/requirements.txt)
+    "numpy==1.26.4",
+    "torch==2.8.0",
+    "torchvision==0.23.0",
+    "pytorch-lightning==2.0.8",
+    "hydra-core==1.1.1",
+    "hydra-colorlog",
+    "omegaconf",
+    "matplotlib",
+    "plotly",
+    "ftfy",
+    "torchsde",
+    "torchdiffeq",
+    "gitpython",
+    "scipy",
+    "sentence-transformers",
+    "einops",
+    "einops-exts",
+    "tqdm",
+    "termcolor",
+    "wandb",
+    "timm",
+    "moviepy==1.0.3",
+
+    # CALVIN environment (calvin_env + tacto)
+    "cloudpickle",
+    "gym==0.25.2",
+    "numba",
+    "numpy-quaternion",
+    "pandas",
+    "pybullet",
+    "pyrender>=0.1.43",
+    "urdfpy>=0.0.22",
+    "pyopengl @ git+https://github.com/mmatl/pyopengl.git@76d1261adee2d3fd99b418e75b0416bb7d2865e6",
+
+    # iTRAP evaluation
+    "opencv-python-headless",
+    "ninja",
+    "seaborn",
+    "optree",
+    "natsort",
+    "rdp",
+    "dtw-python",
+    "pylineclip",
+
+    # Build tooling
+    "setuptools==80.9.0",
+]
+
+[tool.uv]
+# The repository is used from source, it is not installed as a package.
+package = false
